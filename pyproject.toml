@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "manchego-serve"
-version = "0.1.0"
+version = "0.1.1"
 description = "Manchego v2.1 behind the System One wire contract (POST /v1/systemone), offline, with the published serving policy."
 readme = "README.md"
 license = "Apache-2.0"

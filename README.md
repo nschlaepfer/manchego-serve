@@ -11,9 +11,13 @@ file and of the chat template, tokenizer and config files) and the server runs w
 
 Runs on Linux + NVIDIA CUDA (PyTorch, bf16), on CPU (PyTorch, float32), and on Apple silicon (MLX, optional).
 
-**Tested so far:** the MLX backend on Apple silicon, the PyTorch backend on CPU (macOS, and the CPU image on linux/arm64
-with no network). The CUDA image has not yet been built or run on an NVIDIA GPU; its PyTorch code path is the one tested
-on CPU, but bf16 on CUDA is unmeasured here.
+**Tested so far:** the MLX backend on Apple silicon; the PyTorch backend on CPU (macOS, and the CPU image on linux/arm64
+with no network); and the **CUDA image on an NVIDIA A10** (24 GB, driver 570.148, 2026-09-23): built in 76 s including the
+verified weight download, `/healthz` healthy with weights and support files verified and a repeat-identical warm-up, all 40
+fixture requests answered (0 argmax changes against the MLX 8-bit reference; largest probability difference 0.070, on the
+255-option requests, and at most 0.029 elsewhere), a 7,511-token request answered in 2.0 s, serial single-question latency
+p50 81 ms / p95 82 ms (reference linear-attention kernels), peak GPU memory 13.5 GB. v0.1.0's Docker build failed on the
+CUDA base image (PEP 668); v0.1.1 fixes it with one line and changes nothing else.
 
 ## Quick start
 

@@ -29,6 +29,8 @@ ARG MODEL_REPO=oraculumai/Manchego
 ARG MODEL_REVISION=77403228b7dfdf823af99a5f562bdcf80b708d4c
 
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# the CUDA base image (Ubuntu 24.04) marks its system Python as externally managed (PEP 668); without this, pip refuses to install
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # torch: already in the CUDA base image; installed from the PyTorch wheel index otherwise. Either way it must be TORCH_VERSION.
 RUN python -c "import torch" 2>/dev/null || pip install "torch==${TORCH_VERSION}" --index-url "${TORCH_INDEX}"
