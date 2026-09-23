@@ -72,7 +72,7 @@ def test_mlx_matches_reference(mlx_backend, execution):
     for rid, r in ref.items():
         out = dec.handle(BY_ID[rid]["body"])
         worst = max(worst, compare(out["answers"], r["answers"]))
-        # 0.1.1: the Decider's default temperature map is `off`, which must be the v0.1.0 readout byte for byte
+        # 0.1.2: the Decider's default temperature map is `off`, which must be the v0.1.0 readout byte for byte
         assert json.dumps(out["answers"]) == json.dumps(r["answers"]), rid
         assert out["usage"]["input_tokens"] == r["input_tokens"]
         assert out["manchego"]["contract_by_question"] == r["contract_by_question"]
@@ -82,7 +82,7 @@ def test_mlx_matches_reference(mlx_backend, execution):
 
 
 def test_mlx_default_map_keeps_every_choice(mlx_backend):
-    """0.1.1: the fitted map on the published MLX 8-bit build changes probabilities, never a chosen option."""
+    """0.1.2: the fitted map on the published MLX 8-bit build changes probabilities, never a chosen option."""
     from manchego_serve import temperature as TM
     from manchego_serve.decider import Decider
     tmap = TM.load("default")

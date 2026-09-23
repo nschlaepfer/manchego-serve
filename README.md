@@ -5,10 +5,10 @@ speaking TypeSafe AI's **System One wire contract**: `POST /v1/systemone`, `GET 
 
 It serves the policy behind the model card's numbers: contract **auto** (the short prompt up to 26 options, the
 state-first prompt for 27 to 255), **one pass** per question, the client's option order, confidence
-**(K · max p − 1) / (K − 1)**, and every question scored as **its own sequence**. Since 0.1.1 the probabilities are read
+**(K · max p − 1) / (K − 1)**, and every question scored as **its own sequence**. Since 0.1.2 the probabilities are read
 at **one temperature per question type** (choice 1.791, noul 1.73, score 1.0), fitted for v2.1 on the project's own
-held-out development data ([Temperature map](#temperature-map-011)). The model card's numbers are at temperature 1.0;
-`--temperature-map off` restores exactly that, the v0.1.0 policy, byte for byte. A temperature never changes the chosen option.
+held-out development data ([Temperature map](#temperature-map-012)). The model card's numbers are at temperature 1.0;
+`--temperature-map off` restores exactly that, the v0.1.0 and v0.1.1 policy, byte for byte. A temperature never changes the chosen option.
 
 The server never opens an outbound connection:
 the weights are fetched once at setup (pinned by full commit sha, checked against the published SHA-256 of every weight
@@ -22,7 +22,8 @@ verified weight download, `/healthz` healthy with weights and support files veri
 fixture requests answered (0 argmax changes against the MLX 8-bit reference; largest probability difference 0.070, on the
 255-option requests, and at most 0.029 elsewhere), a 7,511-token request answered in 2.0 s, serial single-question latency
 p50 81 ms / p95 82 ms (reference linear-attention kernels), peak GPU memory 13.5 GB. v0.1.0's Docker build failed on the
-CUDA base image (PEP 668); v0.1.1 fixes it with one line and changes nothing else.
+CUDA base image (PEP 668); v0.1.1 fixes it with one line and changes nothing else. That A10 run was v0.1.1, at
+temperature 1.0; v0.1.2's temperature map has not yet been run on CUDA (its chosen options cannot differ, its probabilities do).
 
 ## Quick start
 
@@ -100,7 +101,7 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 
 `manchego_serve/contract_v2.py` is the file published with the weights, byte for byte (a test checks its git blob id).
 
-### Temperature map (0.1.1)
+### Temperature map (0.1.2)
 
 The probabilities are `softmax(z / T)`, where `z` holds the option-code logits and `T` depends on the question type.
 `manchego_serve/temperature_map_v2.1.json` ships with the package and its SHA-256 is pinned in `temperature.py`. It
@@ -134,21 +135,27 @@ gives **choice 1.791, noul 1.73, score 1.0**.
   - under the map every such group is under-confident.
 
   TVD rises everywhere, because flatter probabilities put less mass on the right answer.
+- **Not covered by the fit.**
+  - Every fitted and held-out row used the short prompt (up to 26 options). On 27 to 255 options the map is unmeasured;
+    on the familiar large-menu group (reported only) ECE goes from 0.005 to 0.080.
+  - The fit set has no soft (gold-distribution) targets. On the 102 such choice and noul rows of the familiar groups
+    (reported only), the distance to the gold distribution rises from 0.155 to 0.197.
 - **Which builds.**
   - The map is applied to the bf16 weights (`oraculumai/Manchego`). It was fitted on the same weights in bf16 on CUDA,
     with the adapter unmerged.
   - It is also applied to the MLX 8-bit build. On 321 held-out rows scored with the same prompt token ids, the
     temperature fitted on that build's logits came within 2% of the one fitted on the bf16 logits (2.60 vs 2.64 for
     that harder sample). The two builds chose the same option on 98.1% of those rows.
-  - It is not applied to the MLX 4-bit build or to any other weights (T = 1.0, with a warning), unless a map file is
-    passed explicitly.
+  - It is not applied to the MLX 4-bit build or to any other hashed weights (T = 1.0, with a warning), unless a map
+    file is passed explicitly. With `--no-hash` the declared hub id and revision decide: a build the map does not list
+    gets T = 1.0; a listed one, or a bare directory with nothing declared, keeps the map, reported as not checked.
   - float32 on CPU is unmeasured.
 - **Reported.**
   - `/healthz` and every response carry `temperature` (1.0 when off, else the map), `temperature_map` (source, SHA-256,
     binding to the loaded weights) and `temperature_by_question`.
   - `/healthz` also returns the file's own provenance (`temperature_map_provenance`).
 - **Turning it off.** `--temperature-map off`, `--no-temperature-map` or `MANCHEGO_TEMPERATURE_MAP=off`. This is the
-  v0.1.0 readout, byte for byte; a test checks it against the v0.1.0 golden fixtures.
+  v0.1.0 readout (unchanged in v0.1.1), byte for byte; a test checks it against the v0.1.0 golden fixtures.
 
 ## Pinned weights
 
@@ -196,7 +203,7 @@ differs in the later digits):
                  "legend": {"0": "routine", "1": "soon", "2": "immediately"},
                  "probabilities": {"0": 0.10371844764867573, "1": 0.45375775561390624, "2": 0.44252379673741804}}},
  "usage": {"input_tokens": 244, "output_tokens": 0},
- "manchego": {"server": "manchego-serve 0.1.1", "backend": "mlx", "precision": "q8g64", "contract": "auto",
+ "manchego": {"server": "manchego-serve 0.1.2", "backend": "mlx", "precision": "q8g64", "contract": "auto",
               "temperature": {"choice": 1.791, "noul": 1.73, "score": 1.0},
               "temperature_map": {"source": "default", "temperatures": {"choice": 1.791, "noul": 1.73, "score": 1.0},
                                   "file": "temperature_map_v2.1.json",
@@ -307,7 +314,7 @@ research server, which implements the served policy; it is not public):
   This package's MLX backend reproduces them to within 1e-6 (the observed difference is 0).
 - The torch backend is the reference's torch readout (checked identical to it at bf16 on CPU); against the MLX 8-bit
   reference, float32 on CPU is within 0.04 in probability on the 5 requests marked `torch`, with no change of answer.
-- `golden_logits_mlx8bit.json` (0.1.1) holds the option-code logits behind `golden_mlx8bit.json`, recorded with this
+- `golden_logits_mlx8bit.json` (0.1.2) holds the option-code logits behind `golden_mlx8bit.json`, recorded with this
   package's MLX backend (`tests/record_golden_logits.py`). It lets `tests/test_temperature.py` check, without weights,
   three things:
   - `--temperature-map off` reproduces the v0.1.0 golden answers byte for byte (`json.dumps` equal);
@@ -331,7 +338,7 @@ research server, which implements the served policy; it is not public):
 The model card (<https://huggingface.co/oraculumai/Manchego>) has the results, the training data, the weaknesses and
 the data licences.
 
-**Serving addition (0.1.1): the temperature map.**
+**Serving addition (0.1.2): the temperature map.**
 - It was fitted on development data that includes the hard-gap components. Their families were designed from the
   published JevBench hard-tier specification (families only; no JevBench item text).
 - No JevBench item, per-item result or record was used to fit it or check it.

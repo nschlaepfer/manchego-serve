@@ -189,7 +189,7 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
         if pin and not ident["support_files_match_pin"]:
             log("warning: the chat template, tokenizer or config files are NOT the published ones of that revision; "
                 "prompts or numbers may differ from the published policy")
-    tmap = TM.bind(tmap, info["weights_sha256"], log=log)
+    tmap = TM.bind(tmap, info["weights_sha256"], log=log, declared_repo=info["repo"], declared_revision=info["revision"])
     log(f"temperature map: {tmap.source}, T = {tmap.temperatures} ({tmap.binding or tmap.note})")
     t0 = time.perf_counter()
     b = load_backend(backend, model_dir, dtype=dtype, device=device)

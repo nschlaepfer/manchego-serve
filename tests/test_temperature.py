@@ -1,4 +1,4 @@
-"""The per-type temperature map (0.1.1). It loads, applies per question type and never changes the chosen option. With
+"""The per-type temperature map (0.1.2). It loads, applies per question type and never changes the chosen option. With
 `off`, the readout is v0.1.0's, byte for byte, including on the golden fixtures. No weights needed."""
 import hashlib
 import json
@@ -108,6 +108,28 @@ def test_binding():
     kept = TM.bind(explicit, "0" * 64, log=logs.append)
     assert kept.temperatures == DEFAULT.temperatures and kept.binding.startswith("NOT")
     assert TM.bind(TM.OFF, "0" * 64) is TM.OFF
+
+
+def test_binding_without_hash_follows_the_declared_build():
+    """--no-hash: a declared build the default map does not list (MLX 4-bit) gets T = 1.0; a listed one keeps the map."""
+    from manchego_serve.weights import PINS
+    logs = []
+    four = TM.bind(DEFAULT, None, log=logs.append, declared_repo="oraculumai/Manchego-MLX-4bit",
+                   declared_revision=PINS["oraculumai/Manchego-MLX-4bit"]["revision"])
+    assert four.is_identity and four.source == "off" and "not hashed" in four.note and logs
+    wrong_rev = TM.bind(DEFAULT, None, log=logs.append, declared_repo="oraculumai/Manchego", declared_revision="0" * 40)
+    assert wrong_rev.is_identity
+    for a in DEFAULT.meta["applies_to"]:
+        n = len(logs)
+        kept = TM.bind(DEFAULT, None, log=logs.append, declared_repo=a["repo"], declared_revision=a["revision"])
+        assert kept.temperatures == DEFAULT.temperatures and "declared as a build this map lists" in kept.binding and len(logs) == n
+        # a directory with only a revision declared (the Docker image: MANCHEGO_MODEL is a directory, MANCHEGO_REVISION is set)
+        by_rev = TM.bind(DEFAULT, None, log=logs.append, declared_repo=None, declared_revision=a["revision"])
+        assert by_rev.temperatures == DEFAULT.temperatures
+    bare = TM.bind(DEFAULT, None, log=logs.append)
+    assert bare.temperatures == DEFAULT.temperatures and "not checked" in bare.binding
+    explicit = TM.TemperatureMap(DEFAULT.temperatures, "file", "m.json", "x", DEFAULT.meta)
+    assert TM.bind(explicit, None, declared_repo="oraculumai/Manchego-MLX-4bit").temperatures == DEFAULT.temperatures
 
 
 def test_every_published_v21_build_listed_is_pinned():

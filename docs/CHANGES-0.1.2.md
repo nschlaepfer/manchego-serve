@@ -1,6 +1,7 @@
-# manchego-serve 0.1.1: one temperature per answer type
+# manchego-serve 0.1.2: one temperature per answer type
 
-**Summary.** 0.1.1 changes one thing in the served policy. The option probabilities are now read at a fixed temperature
+**Summary.** 0.1.2 is 0.1.1 (the CUDA Docker fix, whose serving is identical to 0.1.0) plus one change to the served
+policy. The option probabilities are now read at a fixed temperature
 per question type, fitted for Manchego v2.1 on our own held-out development data:
 
 | type | T |
@@ -20,7 +21,7 @@ order, the confidence definition and the limits are all unchanged.
 - **Unchanged:** the chosen option, so every answer and the accuracy stay the same. `choice` is now read directly from
   the logits (largest logit, first in the client's order on an exact tie). That is the same option v0.1.0 returned, for
   every T.
-- **v0.1.0 exactly:** `--temperature-map off`, `--no-temperature-map` or `MANCHEGO_TEMPERATURE_MAP=off`. This gives
+- **v0.1.0 / v0.1.1 exactly:** `--temperature-map off`, `--no-temperature-map` or `MANCHEGO_TEMPERATURE_MAP=off`. This gives
   T = 1.0 for every type, the v0.1.0 readout byte for byte. A test checks it against the v0.1.0 golden fixtures with
   `json.dumps` equality.
 - **Reported:**
@@ -31,7 +32,9 @@ order, the confidence definition and the limits are all unchanged.
 - **Builds:**
   - The map applies to the published v2.1 bf16 weights, where it was fitted (CUDA bf16), and to the MLX 8-bit build
     (checked on 321 held-out rows: the temperature fitted on its logits is within 2% of the bf16 one).
-  - Any other weights get T = 1.0 with a warning, unless a map file is passed explicitly.
+  - Any other hashed weights get T = 1.0 with a warning, unless a map file is passed explicitly. With `--no-hash`,
+    the declared hub id and revision decide: a build the map does not list (the MLX 4-bit build, say) gets T = 1.0; a
+    listed one, or a bare directory with nothing declared, keeps the map, reported as not checked.
 
 ## How it was fitted
 
@@ -47,7 +50,7 @@ order, the confidence definition and the limits are all unchanged.
 
 ## Evidence (held-out half, 3,524 rows)
 
-| | T = 1.0 | 0.1.1 map | change [95% bootstrap interval] |
+| | T = 1.0 | 0.1.2 map | change [95% bootstrap interval] |
 |---|---:|---:|---:|
 | accuracy | 0.639 | 0.639 | 0 (T never changes the choice) |
 | NLL | 0.832 | 0.767 | −0.065 [−0.082, −0.048] |
@@ -71,6 +74,13 @@ order, the confidence definition and the limits are all unchanged.
   fresh draws of its own families (choice ECE 0.046 → 0.092).
 - **TVD.** Flatter probabilities put less mass on the right answer, so the distance to one-hot targets rises everywhere
   (+0.036 above).
+- **Not covered by the fit** (found in review; reported only, nothing refitted):
+  - Every fitted and held-out row used the short prompt (up to 26 options). The state-first prompt (27 to 255 options)
+    is unmeasured; on the familiar large-menu group ECE goes from 0.005 to 0.080.
+  - The fit set has no soft (gold-distribution) targets. On the 102 such choice and noul rows of the familiar groups,
+    the distance to the gold distribution rises from 0.155 to 0.197.
+- **Not yet run on CUDA.** The A10 run behind the #56 follow-up was v0.1.1 at T = 1.0. The chosen options cannot
+  differ under the map; the probabilities do.
 
 ## Disclosure
 
@@ -82,15 +92,16 @@ order, the confidence definition and the limits are all unchanged.
 
 ## Draft follow-up for JevBench #56 (for the account holder to post)
 
-> **manchego-serve v0.1.1 (served-policy change, same weights).** One temperature per answer type (choice 1.791,
-> noul 1.73, score 1.0), applied to the option logits before the softmax.
+> **manchego-serve v0.1.2 (served-policy change, same weights; please use it instead of v0.1.1 if it reaches you
+> before your run).** v0.1.2 is v0.1.1 plus one temperature per answer type (choice
+> 1.791, noul 1.73, score 1.0), applied to the option logits before the softmax. The Docker recipe is v0.1.1's.
 > - **How it was fitted.** Only on our own held-out development data: generated hard-decision components and 22 Natural
 >   Instructions tasks the model never saw. The fit protocol was registered in advance. No JevBench item, per-item
 >   result or record, and no other benchmark's test item, was used to fit or check it.
 > - **What it changes.** A temperature never changes which option is chosen, so answers and accuracy are identical to
->   v0.1.0; only the probabilities and `confidence` change. On our held-out half, ECE goes from 0.093 to 0.018 and NLL
+>   v0.1.1; only the probabilities and `confidence` change. On our held-out half, ECE goes from 0.093 to 0.018 and NLL
 >   from 0.832 to 0.767. On task types the model was trained on, it becomes under-confident (ECE 0.023 → 0.092 there).
-> - **Reproducing it.** `/healthz` reports the map and its SHA-256. `--temperature-map off` reproduces v0.1.0 byte for
->   byte. Weights, prompts, one pass and the run recipe are unchanged.
+> - **Reproducing it.** `/healthz` reports the map and its SHA-256. `--temperature-map off` reproduces v0.1.1 (v0.1.0's
+>   outputs) byte for byte. Weights, prompts, one pass and the run recipe are unchanged.
 > - **Disclosure.** Our hard components' families were designed from the published hard-tier specification (families
 >   only, no item text), so the map is JevBench-hard-informed in the same sense as the model.

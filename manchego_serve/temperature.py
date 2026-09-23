@@ -114,17 +114,32 @@ def load(spec: str | None = None) -> TemperatureMap:
     return TemperatureMap(_temperatures(data, str(p)), "file", str(p), hashlib.sha256(raw).hexdigest(), data)
 
 
-def bind(tmap: TemperatureMap, weights_sha256: str | None, log: Callable[[str], None] = print) -> TemperatureMap:
+def bind(tmap: TemperatureMap, weights_sha256: str | None, log: Callable[[str], None] = print,
+         declared_repo: str | None = None, declared_revision: str | None = None) -> TemperatureMap:
     """Relate a map to the loaded weights (the `weights_sha256` of weights.identify, or None when they were not hashed).
 
     A map is fitted for one model. When the weights were hashed and are not a build the map lists, the default map
     is not applied: T = 1.0 for every type, with a warning. An explicit file is applied, and the warning says the weights
-    are not a listed build. Unhashed weights (--no-hash) keep the map, reported as unchecked.
+    are not a listed build.
+
+    Unhashed weights (--no-hash) cannot be checked, so the declaration decides: when a hub id or revision is declared
+    (`declared_repo`, `declared_revision`) and it is not a build the default map lists (the MLX 4-bit build, for
+    example), the default map is not applied (T = 1.0, with a warning). With a listed declaration, or with nothing
+    declared (a bare directory), the map is kept and reported as not checked.
     """
     if tmap.source == "off":
         return tmap
     listed = {a.get("weights_sha256"): a for a in tmap.meta.get("applies_to") or [] if isinstance(a, dict)}
     if weights_sha256 is None:
+        if tmap.source == "default" and (declared_repo or declared_revision):
+            if not any((not declared_repo or a.get("repo") == declared_repo)
+                       and (not declared_revision or a.get("revision") == declared_revision) for a in listed.values()):
+                why = (f"the weights were not hashed (--no-hash) and are declared as {declared_repo or '(a directory)'}"
+                       f"@{declared_revision or '(no revision)'}, which is not a build the default map (fitted for "
+                       f"{tmap.meta.get('model')}) lists, so T = 1.0 for every type")
+                log(f"warning: {why}")
+                return replace(OFF, note=why)
+            return replace(tmap, binding="not checked: the weights were not hashed (--no-hash); declared as a build this map lists")
         return replace(tmap, binding="not checked: the weights were not hashed (--no-hash)")
     if weights_sha256 in listed:
         a = listed[weights_sha256]
