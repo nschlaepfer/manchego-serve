@@ -1,0 +1,17 @@
+manchego-serve
+Copyright 2026 oraculumai
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+manchego_serve/contract_v2.py is copied unchanged from the Manchego v2.1 model repository
+(https://huggingface.co/oraculumai/Manchego, file contract_v2.py at revision
+77403228b7dfdf823af99a5f562bdcf80b708d4c, tag v2.1; git blob a6c586acbf861ce55e4a4ed6dfd78d7d4515f5d5),
+which is distributed under the Apache License, Version 2.0. Copyright 2026 oraculumai.
+
+This software serves, and does not contain, the Manchego v2.1 weights. Those weights are a modified version of
+Qwen3.5-4B (https://huggingface.co/Qwen/Qwen3.5-4B, Apache License 2.0, Copyright 2026 Alibaba Cloud); their own
+NOTICE and model card (https://huggingface.co/oraculumai/Manchego) carry the attribution of the base model and of the
+training data. A container image built with the weights inside redistributes them under those terms.
+
+The HTTP interface follows TypeSafe AI's System One wire contract. manchego-serve is an independent project, not
+affiliated with or endorsed by TypeSafe AI.

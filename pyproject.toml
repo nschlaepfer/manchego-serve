@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "manchego-serve"
+version = "0.1.0"
+description = "Manchego v2.1 behind the System One wire contract (POST /v1/systemone), offline, with the published serving policy."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [{ name = "oraculumai" }]
+dependencies = [
+    "transformers==5.17.0",
+    "huggingface_hub>=1.5,<2",
+    "jinja2>=3.1",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+# torch is an extra so that CUDA users can install the wheel built for their CUDA version first (see README).
+torch = ["torch==2.10.*"]
+mlx = ["mlx-lm==0.31.3"]
+test = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+manchego-serve = "manchego_serve.server:main"
+manchego-serve-download = "manchego_serve.download:main"
+
+[tool.setuptools]
+packages = ["manchego_serve", "manchego_serve.backends"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "tests"]
+testpaths = ["tests"]
