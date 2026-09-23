@@ -5,8 +5,10 @@
 Policy (contract "auto"), fixed:
   * up to 26 options: the short prompt (question first; called "ours" in the training code), codes A-Z;
   * 27 to 255 options: the state-first prompt of `contract_v2.py` (vendored, unchanged, from oraculumai/Manchego);
-  * one prompt per question, read once: a softmax at temperature 1.0 over the offered option-code tokens at the last
-    prompt position; one option order (the client's); confidence = (K * max p - 1) / (K - 1), clamped to [0, 1].
+  * one prompt per question, read once: a softmax over the offered option-code tokens at the last prompt position, at
+    the temperature of the question's type (temperature.py: the fitted v2.1 map by default; 1.0 for every type under
+    `--temperature-map off`, as in v0.1.0); one option order (the client's); the chosen option is the largest logit;
+    confidence = (K * max p - 1) / (K - 1), clamped to [0, 1].
 
 The short prompt is the one Manchego was trained on, byte for byte. Nothing here imports an ML library.
 """
@@ -107,17 +109,30 @@ def confidence(p: list[float]) -> float:
     return max(0.0, min(1.0, (len(p) * max(p) - 1.0) / (len(p) - 1.0)))
 
 
-def answer(q: dict, opts: list[tuple[str, str | None]], logits: list[float]) -> dict:
-    """The wire answer for one question from its option-code logits (in the client's option order)."""
+def argmax_first(z: list[float]) -> int:
+    """Index of the largest logit; the first one in the client's order on an exact tie. It does not depend on T."""
+    best = 0
+    for i in range(1, len(z)):
+        if z[i] > z[best]:
+            best = i
+    return best
+
+
+def answer(q: dict, opts: list[tuple[str, str | None]], logits: list[float], T: float = TEMPERATURE) -> dict:
+    """The wire answer for one question from its option-code logits (in the client's option order).
+
+    `T` is the temperature of this question's type (temperature.py). At T = 1.0 this is the v0.1.0 readout, byte for byte.
+    The chosen option is read from the logits, so no temperature can change it.
+    """
     values = [v for v, _ in opts]
     probs = {v: 0.0 for v in values}
-    for v, pi in zip(values, softmax(logits, TEMPERATURE)):
+    for v, pi in zip(values, softmax(logits, T)):
         probs[v] += pi / PERMUTE
     p_list = [probs[v] for v in values]
     if q["type"] == "noul":
         return {"type": "noul", "noul": probs["true"]}
     if q["type"] == "choice":
-        return {"type": "choice", "choice": max(values, key=probs.__getitem__), "confidence": confidence(p_list), "probabilities": probs}
+        return {"type": "choice", "choice": values[argmax_first(logits)], "confidence": confidence(p_list), "probabilities": probs}
     levels = q["criteria"]
     return {"type": "score", "score": sum(i * probs[str(i)] for i in range(len(levels))), "confidence": confidence(p_list),
             "legend": {str(i): _text(d) for i, d in enumerate(levels)}, "probabilities": probs}

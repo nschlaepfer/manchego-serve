@@ -29,6 +29,7 @@ try:  # module level: FastAPI resolves the `Request` annotation from this module
 except ImportError:  # pragma: no cover - the contract and backends work without the web stack
     FastAPI = Request = JSONResponse = None
 
+from . import temperature as TM
 from .contract import BadRequest, LIMIT, MAX_OPTIONS
 from .decider import DEFAULT_BATCH_TOKENS, DEFAULT_MAX_PROMPT_TOKENS, DEFAULT_MAX_QUESTIONS, EXECUTIONS, MODEL_NAME, Decider
 
@@ -116,7 +117,8 @@ def create_app(decider: Decider, api_keys: set[str] | None = None, max_queue: in
         return {"ok": True, **decider.describe(), "model": MODEL_NAME,
                 "limits": {"options_per_question": MAX_OPTIONS, "short_prompt_options": LIMIT["short"],
                            "max_prompt_tokens_per_question": decider.max_prompt_tokens, "max_questions_per_request": decider.max_questions},
-                "weight_files": decider.info.get("weight_files"), "support_files": decider.info.get("support_files"), **(health_extra or {})}
+                "weight_files": decider.info.get("weight_files"), "support_files": decider.info.get("support_files"),
+                "temperature_map_provenance": decider.tmap.provenance(), **(health_extra or {})}
 
     @app.get("/v1/models")
     async def models():
@@ -159,8 +161,10 @@ def warm_up(decider: Decider) -> dict:
 
 def build(backend: str, model: str | None, revision: str | None, execution: str = "sequential", dtype: str = "auto",
           device: str = "auto", batch_tokens: int = DEFAULT_BATCH_TOKENS, max_prompt_tokens: int = DEFAULT_MAX_PROMPT_TOKENS,
-          max_questions: int = DEFAULT_MAX_QUESTIONS, hash_weights: bool = True, log=print) -> Decider:
+          max_questions: int = DEFAULT_MAX_QUESTIONS, hash_weights: bool = True, log=print,
+          temperature_map: str | None = "default") -> Decider:
     force_offline()
+    tmap = TM.load(temperature_map)          # fail fast on a bad map, before the weights are read
     from .backends import load_backend
     from .weights import DEFAULT_REPO, resolve, identify
     model = model or DEFAULT_REPO[backend]
@@ -185,15 +189,16 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
         if pin and not ident["support_files_match_pin"]:
             log("warning: the chat template, tokenizer or config files are NOT the published ones of that revision; "
                 "prompts or numbers may differ from the published policy")
+    tmap = TM.bind(tmap, info["weights_sha256"], log=log)
+    log(f"temperature map: {tmap.source}, T = {tmap.temperatures} ({tmap.binding or tmap.note})")
     t0 = time.perf_counter()
     b = load_backend(backend, model_dir, dtype=dtype, device=device)
     log(f"loaded {backend} ({getattr(b, 'precision', '?')}) from {model_dir} in {time.perf_counter() - t0:.1f} s")
     return Decider(b, execution=execution, batch_tokens=batch_tokens, max_prompt_tokens=max_prompt_tokens,
-                   max_questions=max_questions, info=info)
+                   max_questions=max_questions, info=info, temperature_map=tmap)
 
 
-def main(argv: list[str] | None = None) -> int:
-    force_offline()
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(prog="manchego-serve", description="Serve Manchego v2.1 on the System One wire contract, offline.")
     ap.add_argument("--backend", choices=("torch", "mlx"), default=os.environ.get("MANCHEGO_BACKEND", "torch"))
     ap.add_argument("--model", default=os.environ.get("MANCHEGO_MODEL"), help="weights directory, or a hub id already in the "
@@ -214,13 +219,27 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--queue-timeout", type=float, default=600.0, help="seconds a request may wait before 529")
     ap.add_argument("--no-hash", action="store_true", help="skip hashing the weight files at start-up")
     ap.add_argument("--no-warmup", action="store_true", help="skip the two warm-up requests at start-up")
+    ap.add_argument("--temperature-map", default=os.environ.get("MANCHEGO_TEMPERATURE_MAP") or "default",
+                    help="one temperature per question type, applied to the option-code logits: 'default' (the map fitted "
+                         "for v2.1, shipped with the package), 'off' (T = 1.0 for every type, the v0.1.0 policy) or a JSON "
+                         "file (default: $MANCHEGO_TEMPERATURE_MAP, else 'default'). It never changes the chosen option")
+    ap.add_argument("--no-temperature-map", action="store_true", help="same as --temperature-map off")
     args = ap.parse_args(argv)
+    if args.no_temperature_map:
+        args.temperature_map = "off"
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    force_offline()
+    args = parse_args(argv)
 
     def log(msg: str) -> None:
         print(f"[manchego-serve] {msg}", file=sys.stderr, flush=True)
 
     decider = build(args.backend, args.model, args.revision, args.execution, args.dtype, args.device, args.batch_tokens,
-                    args.max_prompt_tokens, args.max_questions, hash_weights=not args.no_hash, log=log)
+                    args.max_prompt_tokens, args.max_questions, hash_weights=not args.no_hash, log=log,
+                    temperature_map=args.temperature_map)
     extra: dict[str, Any] = {"runtime": getattr(decider.b, "runtime", None)}
     if not args.no_warmup:
         extra["warmup"] = warm_up(decider)
@@ -228,7 +247,8 @@ def main(argv: list[str] | None = None) -> int:
     keys = {k for k in os.environ.get("MANCHEGO_API_KEYS", "").split(",") if k}
     app = create_app(decider, api_keys=keys, max_queue=args.max_queue, queue_timeout_s=args.queue_timeout, health_extra=extra)
     import uvicorn
-    log(f"serving {MODEL_NAME} on http://{args.host}:{args.port} (execution {args.execution}, contract auto)")
+    log(f"serving {MODEL_NAME} on http://{args.host}:{args.port} (execution {args.execution}, contract auto, "
+        f"temperature {decider.tmap.wire_temperature()})")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info", server_header=False)
     return 0
 

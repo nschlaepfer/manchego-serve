@@ -3,9 +3,14 @@
 A small, offline HTTP server for **[Manchego v2.1](https://huggingface.co/oraculumai/Manchego)**, a 4B decision model,
 speaking TypeSafe AI's **System One wire contract**: `POST /v1/systemone`, `GET /v1/models`, `GET /healthz`.
 
-It serves exactly the policy behind the model card's numbers: contract **auto** (the short prompt up to 26 options, the
-state-first prompt for 27 to 255), **one pass** per question, **temperature 1.0**, the client's option order, confidence
-**(K · max p − 1) / (K − 1)**, and every question scored as **its own sequence**. It never opens an outbound connection:
+It serves the policy behind the model card's numbers: contract **auto** (the short prompt up to 26 options, the
+state-first prompt for 27 to 255), **one pass** per question, the client's option order, confidence
+**(K · max p − 1) / (K − 1)**, and every question scored as **its own sequence**. Since 0.1.1 the probabilities are read
+at **one temperature per question type** (choice 1.791, noul 1.73, score 1.0), fitted for v2.1 on the project's own
+held-out development data ([Temperature map](#temperature-map-011)). The model card's numbers are at temperature 1.0;
+`--temperature-map off` restores exactly that, the v0.1.0 policy, byte for byte. A temperature never changes the chosen option.
+
+The server never opens an outbound connection:
 the weights are fetched once at setup (pinned by full commit sha, checked against the published SHA-256 of every weight
 file and of the chat template, tokenizer and config files) and the server runs with `HF_HUB_OFFLINE=1`. No telemetry.
 
@@ -77,6 +82,7 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 | `--host`, `--port` | 127.0.0.1, 8000 | or `$MANCHEGO_HOST`, `$MANCHEGO_PORT` (the Docker image sets 0.0.0.0 and 8000) |
 | `--max-queue`, `--queue-timeout` | 32, 600 s | requests allowed to wait for the model, and for how long (then 529) |
 | `--no-hash`, `--no-warmup` | off | skip hashing the weight files / the warm-up at start-up |
+| `--temperature-map` | `default` | `default`: the fitted v2.1 map shipped with the package; `off` (or `--no-temperature-map`): temperature 1.0 for every type, the v0.1.0 policy; or a JSON file with the same schema. Or `$MANCHEGO_TEMPERATURE_MAP` |
 
 `--backend`, `--model` and `--revision` default to `$MANCHEGO_BACKEND`, `$MANCHEGO_MODEL` and `$MANCHEGO_REVISION` when set
 (the Docker image sets them). Optional bearer-token auth: `MANCHEGO_API_KEYS=key1,key2`; without it every request is accepted.
@@ -86,13 +92,63 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 | | |
 |---|---|
 | prompt | contract **auto**: questions with at most 26 options use the short prompt Manchego was trained on (question, `State:`, `Options:` with codes A–Z, "Reply with only the letter of the best option."); 27 to 255 options use the state-first prompt of `contract_v2.py` (system message, fenced state, two-letter codes). Chat template with `add_generation_prompt=True`, `enable_thinking=False`. |
-| readout | the hidden state at the last prompt position, projected in float32 onto the output-embedding rows of the offered option codes only; softmax at temperature 1.0. Probabilities cover exactly the offered options and sum to 1. |
-| passes | one prompt per question, one option order (the client's), no ensembling, no calibration |
+| readout | the hidden state at the last prompt position, projected in float32 onto the output-embedding rows of the offered option codes only; softmax at the question type's temperature (default map: choice 1.791, noul 1.73, score 1.0; `--temperature-map off`: 1.0). Probabilities cover exactly the offered options and sum to 1. The chosen option is the largest logit, whatever the temperature. |
+| passes | one prompt per question, one option order (the client's), no ensembling; the only calibration is the per-type temperature |
 | confidence | `(K * max(p) - 1) / (K - 1)`, clamped to [0, 1], K = number of options (TypeSafe's published definition); Noul answers carry none |
 | isolation | every question is its own sequence: its own prompt and its own row. No question can attend to, or share state with, another; question names never reach the model |
 | execution | `sequential` (default): one forward pass per question, no padding, so a question's numbers do not depend on the rest of the request. `batched` (opt-in): right-padded microbatches of at most 16,384 padded tokens, longest first; still one row per question, but at bf16 or 8 bits the batch shape moves probabilities slightly |
 
 `manchego_serve/contract_v2.py` is the file published with the weights, byte for byte (a test checks its git blob id).
+
+### Temperature map (0.1.1)
+
+The probabilities are `softmax(z / T)`, where `z` holds the option-code logits and `T` depends on the question type.
+`manchego_serve/temperature_map_v2.1.json` ships with the package and its SHA-256 is pinned in `temperature.py`. It
+gives **choice 1.791, noul 1.73, score 1.0**.
+
+- **What it changes.** `noul`, `probabilities`, `confidence` and a score's expected level all change. The chosen option
+  never changes, because it is read from the logits. Accuracy is therefore identical.
+- **What it was fitted on.** Held-out development records of v2.1 only, in a protocol registered before the fit:
+  - the Stage-0 calibration draws of the project's hard-gap screen (generated long policies, multi-hop lookups, judging
+    of worked responses, and fresh draws of v2.1's own families);
+  - 22 Natural Instructions tasks that v2.1 never trained on.
+
+  It was fitted on half of the instances (or tasks) and evaluated on the other half. **Never used:** any JevBench item or
+  record, Public8, test sets, sealed sets, and model-generated labels.
+- **Held-out result** (3,524 rows, accuracy 0.639, which T does not change):
+
+  | measure | T = 1.0 | map | change [95% interval] |
+  |---|---:|---:|---:|
+  | NLL | 0.832 | 0.767 | −0.065 [−0.082, −0.048] |
+  | ECE, 15 bins | 0.093 | 0.018 | −0.075 [−0.081, −0.046] |
+  | Brier | 0.465 | 0.445 | −0.019 [−0.025, −0.013] |
+  | distance to a one-hot target (TVD) | 0.407 | 0.443 | **+0.036** [+0.032, +0.040] |
+
+  - The gain comes from the hard components: ECE goes from 0.15 to 0.07 on long policies, 0.12 to 0.08 on judging (not
+    resolved on its own) and 0.15 to 0.08 on multi-hop.
+  - On the 22 unseen NI tasks it is unresolved (ECE 0.075 to 0.060).
+  - One temperature shared by all types does just as well: the per-type map adds nothing measurable.
+- **What it costs.** v2.1 is already well calibrated at T = 1 on the task types it was trained on, and the map
+  over-flattens them. On its own development groups (2,920 rows, accuracy 0.885, reported only, never fitted):
+  - ECE goes from 0.023 to 0.092 and NLL rises by 0.055 [0.049, 0.061];
+  - under the map every such group is under-confident.
+
+  TVD rises everywhere, because flatter probabilities put less mass on the right answer.
+- **Which builds.**
+  - The map is applied to the bf16 weights (`oraculumai/Manchego`). It was fitted on the same weights in bf16 on CUDA,
+    with the adapter unmerged.
+  - It is also applied to the MLX 8-bit build. On 321 held-out rows scored with the same prompt token ids, the
+    temperature fitted on that build's logits came within 2% of the one fitted on the bf16 logits (2.60 vs 2.64 for
+    that harder sample). The two builds chose the same option on 98.1% of those rows.
+  - It is not applied to the MLX 4-bit build or to any other weights (T = 1.0, with a warning), unless a map file is
+    passed explicitly.
+  - float32 on CPU is unmeasured.
+- **Reported.**
+  - `/healthz` and every response carry `temperature` (1.0 when off, else the map), `temperature_map` (source, SHA-256,
+    binding to the loaded weights) and `temperature_by_question`.
+  - `/healthz` also returns the file's own provenance (`temperature_map_provenance`).
+- **Turning it off.** `--temperature-map off`, `--no-temperature-map` or `MANCHEGO_TEMPERATURE_MAP=off`. This is the
+  v0.1.0 readout, byte for byte; a test checks it against the v0.1.0 golden fixtures.
 
 ## Pinned weights
 
@@ -127,28 +183,39 @@ descriptions may be strings or JSON values. `choice` criteria: an object `{value
 entries). `score` criteria: a list of level descriptions (2 to 255). `noul` criteria: optional `{"true": ..., "false": ...}`
 descriptions.
 
-Response (this example came from the MLX 8-bit build on Apple silicon; bf16 on CUDA differs in the later digits):
+Response (this example came from the MLX 8-bit build on Apple silicon with the default temperature map; bf16 on CUDA
+differs in the later digits):
 
 ```json
 {"model": "manchego-2.1",
  "answers": {
-   "route":     {"type": "choice", "choice": "returns", "confidence": 0.997684993793104,
-                 "probabilities": {"returns": 0.998456662528736, "shipping": 0.0009666502536993732, "billing": 0.0005766872175646961}},
-   "defective": {"type": "noul", "noul": 0.9915093713016409},
+   "route":     {"type": "choice", "choice": "returns", "confidence": 0.9474451113245261,
+                 "probabilities": {"returns": 0.964963407549684, "shipping": 0.020027128735617024, "billing": 0.01500946371469903}},
+   "defective": {"type": "noul", "noul": 0.9400035618635341},
    "urgency":   {"type": "score", "score": 1.3388053490887424, "confidence": 0.18063663342085934,
                  "legend": {"0": "routine", "1": "soon", "2": "immediately"},
                  "probabilities": {"0": 0.10371844764867573, "1": 0.45375775561390624, "2": 0.44252379673741804}}},
  "usage": {"input_tokens": 244, "output_tokens": 0},
- "manchego": {"server": "manchego-serve 0.1.0", "backend": "mlx", "precision": "q8g64", "contract": "auto",
-              "temperature": 1.0, "permute": 1,
+ "manchego": {"server": "manchego-serve 0.1.1", "backend": "mlx", "precision": "q8g64", "contract": "auto",
+              "temperature": {"choice": 1.791, "noul": 1.73, "score": 1.0},
+              "temperature_map": {"source": "default", "temperatures": {"choice": 1.791, "noul": 1.73, "score": 1.0},
+                                  "file": "temperature_map_v2.1.json",
+                                  "sha256": "2458d21771bbddc9c23ae0e63c880f2ebe5a6aa997e8c9de6b5e67b7210cd07e",
+                                  "fitted_for": "Manchego v2.1",
+                                  "binding": "a build this map lists: oraculumai/Manchego-MLX-8bit@79e55e2d0c4446abfe0d55d829e8854de9177c1b"},
+              "permute": 1,
               "confidence_definition": "(K * max(p) - 1) / (K - 1), clamped to [0, 1]; K = number of offered options",
               "execution": "sequential", "model_repo": "oraculumai/Manchego-MLX-8bit",
               "model_revision": "79e55e2d0c4446abfe0d55d829e8854de9177c1b",
               "weights_sha256": "6b0cb89600ffcc0941c557ac60a8445709d5f996a6baec24d9a92213ddccf84b", "weights_verified": true,
               "support_files_verified": true,
               "isolation": "one sequence per question; no question can attend to another",
-              "contract_by_question": {"route": "short", "defective": "short", "urgency": "short"}, "forward_passes": 3}}
+              "contract_by_question": {"route": "short", "defective": "short", "urgency": "short"},
+              "temperature_by_question": {"route": 1.791, "defective": 1.73, "urgency": 1.0}, "forward_passes": 3}}
 ```
+
+With `--temperature-map off` (T = 1.0, as in v0.1.0) the same request gives route `returns` with p = 0.998456662528736
+(confidence 0.997684993793104), `defective` 0.9915093713016409 and the same score. The choice is the same either way.
 
 `noul` is P(yes). `score` is the expected level `sum(i * p_i)`. `usage.input_tokens` is the total prompt length over all
 questions (each question re-reads the state). `GET /v1/models` lists `manchego-2.1` (alias `manchego-latest`).
@@ -200,7 +267,9 @@ is imported, and never downloads).
 - **Warm-up** happens at start-up: a fixed invented request is scored twice before the port opens
   (`warmup.first_ms`, `warmup.second_ms`). Start latency measurements after `/healthz` answers.
   `warmup.repeat_identical` says whether the runtime reproduced itself bit for bit.
-- **Deterministic settings.** No sampling anywhere: temperature 1.0 over logits, one pass, one option order. Keep the
+- **Deterministic settings.** No sampling anywhere: one fixed temperature per question type over the logits (reported
+  in `/healthz` and in every response as `temperature`, `temperature_map` and `temperature_by_question`; `off` gives
+  1.0, the v0.1.0 policy), one pass, one option order. Keep the
   default `--execution sequential`: each question is one forward pass with no padding, so its probabilities do not
   depend on which other questions share the request, or on the request's size. (`batched` changes the batch shape
   and, at bf16, moves probabilities in the later digits; it never lets questions see each other.)
@@ -220,7 +289,7 @@ is imported, and never downloads).
 
 ```bash
 pip install ".[test]"
-pytest                                                   # no weights needed: wire contract, limits, prompt parity
+pytest                                                   # no weights needed: wire contract, limits, prompt parity, temperature map
 MANCHEGO_TEST_TOKENIZER=/path/to/Manchego pytest         # + token ids and option-code ids
 MANCHEGO_TEST_MLX_MODEL=/path/to/Manchego-MLX-8bit pytest -s tests/test_numeric.py     # Apple silicon
 MANCHEGO_TEST_TORCH_MODEL=/path/to/Manchego pytest -s tests/test_numeric.py            # informational
@@ -238,6 +307,14 @@ research server, which implements the served policy; it is not public):
   This package's MLX backend reproduces them to within 1e-6 (the observed difference is 0).
 - The torch backend is the reference's torch readout (checked identical to it at bf16 on CPU); against the MLX 8-bit
   reference, float32 on CPU is within 0.04 in probability on the 5 requests marked `torch`, with no change of answer.
+- `golden_logits_mlx8bit.json` (0.1.1) holds the option-code logits behind `golden_mlx8bit.json`, recorded with this
+  package's MLX backend (`tests/record_golden_logits.py`). It lets `tests/test_temperature.py` check, without weights,
+  three things:
+  - `--temperature-map off` reproduces the v0.1.0 golden answers byte for byte (`json.dumps` equal);
+  - the default map never changes a chosen option;
+  - the map loads, is the pinned file, binds to the loaded weights and applies per question type.
+
+  `tests/v010_reference.py` is v0.1.0's readout, frozen.
 
 ## Disclosures (from the model card)
 
@@ -253,6 +330,12 @@ research server, which implements the served policy; it is not public):
 
 The model card (<https://huggingface.co/oraculumai/Manchego>) has the results, the training data, the weaknesses and
 the data licences.
+
+**Serving addition (0.1.1): the temperature map.**
+- It was fitted on development data that includes the hard-gap components. Their families were designed from the
+  published JevBench hard-tier specification (families only; no JevBench item text).
+- No JevBench item, per-item result or record was used to fit it or check it.
+- It is not part of the model card's numbers, which are at temperature 1.0.
 
 ## Licence
 

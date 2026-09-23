@@ -7,8 +7,9 @@ from __future__ import annotations
 from typing import Any
 
 from . import __version__
-from .contract import (AUTO, CONFIDENCE_DEFINITION, MAX_OPTIONS, PERMUTE, RENDER, TEMPERATURE, BadRequest, answer,
-                       codes_for, contract_for, options_of)
+from . import temperature as TM
+from .contract import (AUTO, CONFIDENCE_DEFINITION, MAX_OPTIONS, PERMUTE, RENDER, BadRequest, answer, codes_for,
+                       contract_for, options_of)
 
 MODEL_NAME = "manchego-2.1"
 DEFAULT_MAX_PROMPT_TOKENS = 32768     # per question: state + question + options, after the chat template
@@ -25,14 +26,19 @@ class Decider:
     execution "batched": all prompts of a request in right-padded microbatches, longest first, at most `batch_tokens`
     padded tokens each. Faster; at bf16 or 8 bits the batch shape moves probabilities slightly.
     Either way every question is its own sequence (its own row): no question can attend to another.
+
+    temperature_map: one temperature per question type, applied to the option-code logits before the softmax
+    (temperature.py). The default here is `temperature.OFF` (T = 1.0, the v0.1.0 readout); the server's command line
+    loads the fitted v2.1 map by default. A temperature never changes the chosen option.
     """
 
     def __init__(self, backend, execution: str = "sequential", batch_tokens: int = DEFAULT_BATCH_TOKENS,
                  max_prompt_tokens: int = DEFAULT_MAX_PROMPT_TOKENS, max_questions: int = DEFAULT_MAX_QUESTIONS,
-                 info: dict | None = None):
+                 info: dict | None = None, temperature_map: TM.TemperatureMap = TM.OFF):
         if execution not in EXECUTIONS:
             raise ValueError(f"unknown execution {execution!r}; expected one of {EXECUTIONS}")
         self.b, self.execution, self.batch_tokens = backend, execution, int(batch_tokens)
+        self.tmap = temperature_map
         self.max_prompt_tokens, self.max_questions = int(max_prompt_tokens), int(max_questions)
         self.info = dict(info or {})
         self._code_ids: dict[str, int] = {}
@@ -102,15 +108,18 @@ class Decider:
                 raise BadRequest(f"question {name!r}: {e}") from None
         names = list(plans)
         logits, calls = self.score_many([(plans[n]["ids"], plans[n]["cands"]) for n in names])
-        answers = {n: answer(plans[n]["q"], plans[n]["opts"], z) for n, z in zip(names, logits)}
+        temps = {n: self.tmap.T(plans[n]["q"]["type"]) for n in names}
+        answers = {n: answer(plans[n]["q"], plans[n]["opts"], z, temps[n]) for n, z in zip(names, logits)}
         return {"model": MODEL_NAME, "answers": answers,
                 "usage": {"input_tokens": sum(len(plans[n]["ids"]) for n in names), "output_tokens": 0},
-                "manchego": {**self.describe(), "contract_by_question": {n: plans[n]["contract"] for n in names}, "forward_passes": calls}}
+                "manchego": {**self.describe(), "contract_by_question": {n: plans[n]["contract"] for n in names},
+                             "temperature_by_question": temps, "forward_passes": calls}}
 
     def describe(self) -> dict:
         """What produced the numbers. Reported in every response and by /healthz."""
         return {"server": f"manchego-serve {__version__}", "backend": self.b.name, "precision": getattr(self.b, "precision", None),
-                "contract": AUTO, "temperature": TEMPERATURE, "permute": PERMUTE, "confidence_definition": CONFIDENCE_DEFINITION,
+                "contract": AUTO, "temperature": self.tmap.wire_temperature(), "temperature_map": self.tmap.describe(),
+                "permute": PERMUTE, "confidence_definition": CONFIDENCE_DEFINITION,
                 "execution": self.execution, "model_repo": self.info.get("repo"), "model_revision": self.info.get("revision"),
                 "weights_sha256": self.info.get("weights_sha256"), "weights_verified": self.info.get("weights_verified"),
                 "support_files_verified": self.info.get("support_files_verified"),

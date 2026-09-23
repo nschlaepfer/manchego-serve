@@ -1,0 +1,390 @@
+{
+ "schema": "manchego-temperature-map/1",
+ "model": "Manchego v2.1",
+ "temperatures": {
+  "choice": 1.791,
+  "noul": 1.73,
+  "score": 1.0
+ },
+ "how_applied": "p = softmax(option-code logits / T[question type]); the chosen option is the largest logit, so no temperature changes it",
+ "applies_to": [
+  {
+   "repo": "oraculumai/Manchego",
+   "revision": "77403228b7dfdf823af99a5f562bdcf80b708d4c",
+   "format": "bf16 Transformers",
+   "weights_sha256": "1130745e2a9506ece5a35a1d3da5ad1ce17e8a05052d8fc45d1971986bd8de61",
+   "evidence": "the fitted path: bf16 on CUDA, the v2.1 adapter (sha256 d43f96c7) on Qwen3.5-4B through PEFT; these weights are that adapter merged in bf16. float32 on CPU is unmeasured."
+  },
+  {
+   "repo": "oraculumai/Manchego-MLX-8bit",
+   "revision": "79e55e2d0c4446abfe0d55d829e8854de9177c1b",
+   "format": "MLX 8-bit",
+   "weights_sha256": "6b0cb89600ffcc0941c557ac60a8445709d5f996a6baec24d9a92213ddccf84b",
+   "evidence": "checked on 321 held-out rows with the same prompt token ids: temperature fitted on this build's logits 2.598 vs 2.641 on the fitted path's logits for the same rows (choice 2.244 vs 2.286, noul 3.057 vs 3.099); argmax agreement 0.981"
+  }
+ ],
+ "not_applied_to": {
+  "oraculumai/Manchego-MLX-4bit": "not measured; the default map is not applied to it (T = 1.0) unless this file is passed explicitly"
+ },
+ "fitted_on": {
+  "protocol": "experiments/TEMPERATURE_MAP_V011.md in the Manchego research repository, registered in commit 410ee1a before any fit",
+  "results_commit": "ea363db0cade19f22d22cbaa3f690472e9158c18",
+  "script": {
+   "path": "scripts/tmap_v011_fit.py",
+   "sha256": "9c2e157adf42f3391afb496d67127ed8b13e8f9431ec4925a5b32ad7cca53ab2"
+  },
+  "data": "development records of v2.1 only, never trained on by v2.1: the hard-gap screen's Stage-0 calibration draws (8 views of four generated components) and natural_ood (22 Natural Instructions tasks v2.1 never saw). Served prompt policy (contract v1 up to 26 options, v2 above).",
+  "records": [
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c0__rep_cal_r0.records.jsonl",
+    "sha256": "7f2cb7d30c083b673e5ea7b014ea2237da975b1854b93a4ec77c9fc795e8235a",
+    "records": 2303
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c0__rep_cal_r0.records.jsonl",
+    "sha256": "b07c7dfa19993ab7cff84b9b9a181d925c25384bb42614431021090dc79fb5df",
+    "records": 2482
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c1__lp_cal0_ood_combo.records.jsonl",
+    "sha256": "85981c6549cca17598f54b03c2cfe8c5895b561f7522d9a66002d31be0f56f5c",
+    "records": 600
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c1__lp_cal0_ood_combo.records.jsonl",
+    "sha256": "f73c782ab4cdacdb1d70592c67b88d1d2c6f3f46b73f8b1bd7f368ea0b9cd2c0",
+    "records": 600
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c1__lp_cal0_ood_domain.records.jsonl",
+    "sha256": "14cb7dc966d9b296d02818b4839ff13f12148331f4fa3efc92006122e3f24cd5",
+    "records": 600
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c1__lp_cal0_ood_domain.records.jsonl",
+    "sha256": "f516e284ce1f9946aedcb28730c1de3bc91c6cd01f76811f11053d396840c6ae",
+    "records": 600
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c1__lp_cal0_ood_genre.records.jsonl",
+    "sha256": "04ce0da3960cfe5bd5e7a06365d4e1d74c18911a96350a31fbc68178e7deae18",
+    "records": 600
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c1__lp_cal0_ood_genre.records.jsonl",
+    "sha256": "bde3a6fe52fa57369647be74147d91aca7811504b80b2811c549f36a88732921",
+    "records": 600
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c2__cd_cal_r0.records.jsonl",
+    "sha256": "918077e92a2f53662709cacb6272d7bc58ddf6bc94115f1175f9042d9144b894",
+    "records": 836
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c2__cd_cal_r0.records.jsonl",
+    "sha256": "84f1cdc7dc8c968eee2d2d66f1cc03aa09b36d018426663b53264cde06949d49",
+    "records": 836
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c3__hop_cal_r0_ood_genre.records.jsonl",
+    "sha256": "1cd27e427150e1a0f023a7e2c38dfe3cae2b099d547109e86cf0e3c7573926aa",
+    "records": 400
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c3__hop_cal_r0_ood_genre.records.jsonl",
+    "sha256": "00b1e7055fa61d0237cb9f4511a1a2475509922c85ad92969a55306e64f8d023",
+    "records": 400
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c3__hop_cal_r0_ood_shape.records.jsonl",
+    "sha256": "e02ba5c83ae5076d2fb6d73c6e9a38497c2d27ca21dd414d574bcbc216be97f4",
+    "records": 400
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c3__hop_cal_r0_ood_shape.records.jsonl",
+    "sha256": "af57f136ab4b0263a3366562a748ad1b6ae5270d1da71ef0e358edf79e476202",
+    "records": 400
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v1__c3__hop_cal_r0_ood_skin.records.jsonl",
+    "sha256": "dac2a1639289e58ad6d84961344244c3d8026071871dbf8ed3b138fafd24fb6b",
+    "records": 400
+   },
+   {
+    "path": "~/cheese-archives/nico-rig/hardgap/eval/g0_r0/v21__v2__c3__hop_cal_r0_ood_skin.records.jsonl",
+    "sha256": "315636097118fab619dd56ef9404712b53215ed8025327911ab0a8b42701c397",
+    "records": 400
+   },
+   {
+    "path": "~/cheese-archives/probe/stage1/dev_4b_full/candidate__v1__dev.records.jsonl",
+    "sha256": "87fc1097ae7cf7bc75d3568089083c6a6cbe6653a3d9162f1e631c96e9edb2ab",
+    "records": 3700
+   },
+   {
+    "path": "~/cheese-archives/probe/stage1/dev_4b_full/candidate__v2__dev.records.jsonl",
+    "sha256": "c33f8faf67add13ee5adc5afbfe7b36d7c9d661f861866ab9e0baa857357f0f1",
+    "records": 3875
+   }
+  ],
+  "rows": {
+   "fit": 3495,
+   "held_out": 3524,
+   "dropped_no_served_prompt_record": {
+    "c0__rep_cal_r0": 179,
+    "c1__lp_cal0_ood_combo": 0,
+    "c1__lp_cal0_ood_domain": 0,
+    "c1__lp_cal0_ood_genre": 0,
+    "c2__cd_cal_r0": 0,
+    "c3__hop_cal_r0_ood_genre": 0,
+    "c3__hop_cal_r0_ood_shape": 0,
+    "c3__hop_cal_r0_ood_skin": 0,
+    "natural_ood": 0
+   }
+  },
+  "split": "50/50 by unit (instance in the generated views, task in natural_ood), by sha256 order within each view",
+  "objective": "mean target cross-entropy over the FIT half, per question type; golden-section search on log T in [0.25, 8]",
+  "decision_rule": "serve a type's T only if held-out NLL and ECE both improve with 95% bootstrap intervals excluding 0; else 1.0",
+  "never_used": [
+   "any JevBench item, record or file",
+   "Public8",
+   "the transfer holdout",
+   "sealed or confirmation groups",
+   "test sets",
+   "any model-generated label"
+  ],
+  "T_ci95_over_fit_units": {
+   "choice": [
+    1.6344024153183954,
+    1.961092730492081
+   ],
+   "noul": [
+    1.489423477081057,
+    2.006704887990966
+   ],
+   "score": null
+  },
+  "one_shared_T": 1.778
+ },
+ "held_out_result": {
+  "rows": 3524,
+  "accuracy": 0.6388,
+  "nll": {
+   "T1": 0.8318,
+   "map": 0.7673,
+   "diff_ci95": [
+    -0.0822,
+    -0.048
+   ]
+  },
+  "ece15": {
+   "T1": 0.0929,
+   "map": 0.0175,
+   "diff_ci95": [
+    -0.0811,
+    -0.0464
+   ]
+  },
+  "brier": {
+   "T1": 0.4647,
+   "map": 0.4453,
+   "diff_ci95": [
+    -0.0252,
+    -0.0134
+   ]
+  },
+  "tvd_to_target": {
+   "T1": 0.4065,
+   "map": 0.4427,
+   "diff_ci95": [
+    0.0324,
+    0.0403
+   ]
+  },
+  "by_source": {
+   "C0": {
+    "what": "repair-replay draws of v2.1's own families (familiar task types, fresh instances)",
+    "n": 1164,
+    "accuracy": 0.7964,
+    "ece_T1": 0.0507,
+    "ece_map": 0.0581,
+    "nll_T1": 0.4905,
+    "nll_map": 0.5028,
+    "nll_diff_ci95": [
+     -0.0109,
+     0.0345
+    ],
+    "ece_diff_ci95": [
+     -0.028,
+     0.0414
+    ]
+   },
+   "C1": {
+    "what": "long governed policies, held-out genre/domain/combo",
+    "n": 900,
+    "accuracy": 0.4611,
+    "ece_T1": 0.1523,
+    "ece_map": 0.0715,
+    "nll_T1": 1.1794,
+    "nll_map": 1.0547,
+    "nll_diff_ci95": [
+     -0.1499,
+     -0.1006
+    ],
+    "ece_diff_ci95": [
+     -0.0847,
+     -0.0551
+    ]
+   },
+   "C2": {
+    "what": "judging worked responses, held-out task grammars and desks",
+    "n": 420,
+    "accuracy": 0.6429,
+    "ece_T1": 0.118,
+    "ece_map": 0.0842,
+    "nll_T1": 0.702,
+    "nll_map": 0.6388,
+    "nll_diff_ci95": [
+     -0.1234,
+     -0.0114
+    ],
+    "ece_diff_ci95": [
+     -0.0552,
+     0.0163
+    ]
+   },
+   "C3": {
+    "what": "multi-hop lookup, held-out shape/skin/genre",
+    "n": 600,
+    "accuracy": 0.5167,
+    "ece_T1": 0.1471,
+    "ece_map": 0.0768,
+    "nll_T1": 1.2767,
+    "nll_map": 1.1233,
+    "nll_diff_ci95": [
+     -0.2001,
+     -0.1068
+    ],
+    "ece_diff_ci95": [
+     -0.0969,
+     -0.022
+    ]
+   },
+   "natural_ood": {
+    "what": "22 Natural Instructions tasks v2.1 never trained on",
+    "n": 440,
+    "accuracy": 0.7477,
+    "ece_T1": 0.075,
+    "ece_map": 0.0605,
+    "nll_T1": 0.5405,
+    "nll_map": 0.516,
+    "nll_diff_ci95": [
+     -0.1054,
+     0.0485
+    ],
+    "ece_diff_ci95": [
+     -0.0661,
+     0.0582
+    ]
+   }
+  },
+  "per_type_vs_one_T": "no resolved difference: the per-type map and one shared T give the same held-out NLL and ECE"
+ },
+ "known_costs": [
+  "Over-flattens v2.1's familiar task types (its own development groups, reported only, never fitted): ECE 0.023 -> 0.092, NLL +0.055 [+0.049, +0.061] over 2920 rows at accuracy 0.885; under the map every familiar group is under-confident (mean confidence below accuracy).",
+  "Flatter probabilities put less mass on the right answer: mean total variation distance to a one-hot target rises by +0.036 [+0.032, +0.040] on the held-out half.",
+  "C0 (fresh draws of v2.1's own families): choice ECE 0.046 -> 0.092; natural_ood: NLL 0.540 -> 0.516 and ECE 0.075 -> 0.060, both unresolved; its rows end slightly under-confident (-0.022).",
+  "score is not fitted (no held-out score rows in the fit set): T = 1.0.",
+  "Accuracy and every chosen option are unchanged."
+ ],
+ "familiar_groups_report_only": {
+  "adequacy": {
+   "n": 300,
+   "accuracy": 0.8233,
+   "ece_T1": 0.0546,
+   "ece_map": 0.1139,
+   "nll_T1": 0.4281,
+   "nll_map": 0.4839
+  },
+  "computed": {
+   "n": 463,
+   "accuracy": 0.9496,
+   "ece_T1": 0.0225,
+   "ece_map": 0.0579,
+   "nll_T1": 0.1409,
+   "nll_map": 0.1773
+  },
+  "fault": {
+   "n": 100,
+   "accuracy": 1.0,
+   "ece_T1": 0.0194,
+   "ece_map": 0.0824,
+   "nll_T1": 0.5155,
+   "nll_map": 0.542
+  },
+  "governed": {
+   "n": 364,
+   "accuracy": 0.8764,
+   "ece_T1": 0.0604,
+   "ece_map": 0.1467,
+   "nll_T1": 0.3112,
+   "nll_map": 0.3988
+  },
+  "large_menu": {
+   "n": 100,
+   "accuracy": 1.0,
+   "ece_T1": 0.0052,
+   "ece_map": 0.0802,
+   "nll_T1": 0.0056,
+   "nll_map": 0.0914
+  },
+  "lookup_chain": {
+   "n": 287,
+   "accuracy": 0.9721,
+   "ece_T1": 0.0147,
+   "ece_map": 0.0734,
+   "nll_T1": 0.0842,
+   "nll_map": 0.1381
+  },
+  "natural_dev": {
+   "n": 303,
+   "accuracy": 0.8053,
+   "ece_T1": 0.0475,
+   "ece_map": 0.1316,
+   "nll_T1": 0.4193,
+   "nll_map": 0.4962
+  },
+  "public": {
+   "n": 200,
+   "accuracy": 0.905,
+   "ece_T1": 0.0553,
+   "ece_map": 0.1645,
+   "nll_T1": 0.28,
+   "nll_map": 0.3894
+  },
+  "score_levels": {
+   "n": 200,
+   "accuracy": 1.0,
+   "ece_T1": 0.0145,
+   "ece_map": 0.0145,
+   "nll_T1": 0.1983,
+   "nll_map": 0.1983
+  },
+  "skills_comp": {
+   "n": 303,
+   "accuracy": 0.7987,
+   "ece_T1": 0.0616,
+   "ece_map": 0.0694,
+   "nll_T1": 0.3494,
+   "nll_map": 0.3716
+  },
+  "temporal": {
+   "n": 300,
+   "accuracy": 0.83,
+   "ece_T1": 0.0402,
+   "ece_map": 0.1139,
+   "nll_T1": 0.3608,
+   "nll_map": 0.4193
+  }
+ },
+ "disclosure": "The hard-gap components were designed from the published JevBench hard-tier family specification (families only; no JevBench item text). No JevBench item, per-item result or record was used to fit or check this map."
+}

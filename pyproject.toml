@@ -32,6 +32,9 @@ manchego-serve-download = "manchego_serve.download:main"
 [tool.setuptools]
 packages = ["manchego_serve", "manchego_serve.backends"]
 
+[tool.setuptools.package-data]
+manchego_serve = ["temperature_map_v2.1.json"]
+
 [tool.pytest.ini_options]
 pythonpath = [".", "tests"]
 testpaths = ["tests"]

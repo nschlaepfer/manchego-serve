@@ -8,6 +8,7 @@
   bf16 on CUDA) against the MLX 8-bit reference on the requests marked `torch`. Different precision, so the tolerance
   is loose; the maximum difference is printed (pytest -s). Set MANCHEGO_TEST_TORCH_MODEL.
 """
+import json
 import math
 
 import pytest
@@ -71,11 +72,32 @@ def test_mlx_matches_reference(mlx_backend, execution):
     for rid, r in ref.items():
         out = dec.handle(BY_ID[rid]["body"])
         worst = max(worst, compare(out["answers"], r["answers"]))
+        # 0.1.1: the Decider's default temperature map is `off`, which must be the v0.1.0 readout byte for byte
+        assert json.dumps(out["answers"]) == json.dumps(r["answers"]), rid
         assert out["usage"]["input_tokens"] == r["input_tokens"]
         assert out["manchego"]["contract_by_question"] == r["contract_by_question"]
         assert out["manchego"]["forward_passes"] == r["backbone_calls"]
     print(f"\nMLX 8-bit, {execution}: {len(ref)} requests, max |difference| vs reference = {worst:.3g}")
     assert worst <= TOL
+
+
+def test_mlx_default_map_keeps_every_choice(mlx_backend):
+    """0.1.1: the fitted map on the published MLX 8-bit build changes probabilities, never a chosen option."""
+    from manchego_serve import temperature as TM
+    from manchego_serve.decider import Decider
+    tmap = TM.load("default")
+    assert not tmap.is_identity
+    dec = Decider(mlx_backend, temperature_map=tmap)
+    for rid, r in GOLDEN["results"]["sequential"].items():
+        out = dec.handle(BY_ID[rid]["body"])
+        for name, a in out["answers"].items():
+            g = r["answers"][name]
+            assert a.get("choice") == g.get("choice")
+            if "probabilities" in a:
+                pa, pg = list(a["probabilities"].values()), list(g["probabilities"].values())
+                assert pa.index(max(pa)) == pg.index(max(pg))
+            else:
+                assert (a["noul"] > 0.5) == (g["noul"] > 0.5)
 
 
 def test_torch_vs_mlx_reference_informational():
