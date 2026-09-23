@@ -1,5 +1,7 @@
 # Pinned Python dependencies of the image: the full set resolved in the CPU variant (python:3.12.11-slim-bookworm, 2026-09-23),
-# minus torch and the packages only torch needs. torch itself comes from the CUDA base image or the PyTorch wheel index.
+# minus torch and the packages only torch needs, plus setuptools (the build backend of this package; installed with
+# --no-build-isolation so the build does not fetch an unpinned one). torch itself comes from the CUDA base image or the
+# PyTorch wheel index.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
@@ -27,6 +29,7 @@ PyYAML==6.0.3
 regex==2026.9.10
 rich==15.0.0
 safetensors==0.8.0
+setuptools==78.1.0
 shellingham==1.5.4
 starlette==1.6.0
 tokenizers==0.23.2

@@ -1,4 +1,4 @@
-"""Prompt parity with the reference implementation (the server that produced the published numbers).
+"""Prompt parity with the reference implementation (the project's research server, which implements the served policy).
 
 golden_prompts.json holds, for every question of the invented requests in requests.json, the reference's chat-templated
 prompt, its token ids, the contract it chose and the option-code token ids. This package must reproduce all of them.

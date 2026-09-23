@@ -35,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
     if pin and revision == pin["revision"] and ident["weights_match_pin"] is None:
         print(f"error: the downloaded weight files do not match the pinned SHA-256 of {args.repo}@{revision}", file=sys.stderr)
         return 1
+    if pin and revision == pin["revision"] and not ident["support_files_match_pin"]:
+        print(f"error: the downloaded chat template / tokenizer / config files do not match the pinned SHA-256 of {args.repo}@{revision}",
+              file=sys.stderr)
+        return 1
     return 0
 
 

@@ -7,9 +7,13 @@ It serves exactly the policy behind the model card's numbers: contract **auto** 
 state-first prompt for 27 to 255), **one pass** per question, **temperature 1.0**, the client's option order, confidence
 **(K · max p − 1) / (K − 1)**, and every question scored as **its own sequence**. It never opens an outbound connection:
 the weights are fetched once at setup (pinned by full commit sha, checked against the published SHA-256 of every weight
-file) and the server runs with `HF_HUB_OFFLINE=1`. No telemetry.
+file and of the chat template, tokenizer and config files) and the server runs with `HF_HUB_OFFLINE=1`. No telemetry.
 
 Runs on Linux + NVIDIA CUDA (PyTorch, bf16), on CPU (PyTorch, float32), and on Apple silicon (MLX, optional).
+
+**Tested so far:** the MLX backend on Apple silicon, the PyTorch backend on CPU (macOS, and the CPU image on linux/arm64
+with no network). The CUDA image has not yet been built or run on an NVIDIA GPU; its PyTorch code path is the one tested
+on CPU, but bf16 on CUDA is unmeasured here.
 
 ## Quick start
 
@@ -32,12 +36,17 @@ CPU image (amd64 or arm64; float32 needs about 20 GB of RAM, `--dtype bfloat16` 
 docker build -t manchego-serve:2.1-cpu \
   --build-arg BASE_IMAGE=python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7 \
   --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu .
-docker run --rm -p 127.0.0.1:8000:8000 manchego-serve:2.1-cpu
+docker run --rm -p 127.0.0.1:8000:8000 manchego-serve:2.1-cpu                      # float32
+docker run --rm -p 127.0.0.1:8000:8000 manchego-serve:2.1-cpu --dtype bfloat16     # about half the memory
 ```
+
+Arguments after the image name are appended to `manchego-serve`. The image sets `MANCHEGO_HOST=0.0.0.0` and
+`MANCHEGO_PORT=8000`, so extra arguments keep the container reachable.
 
 Weights outside the image: build with `--build-arg DOWNLOAD_WEIGHTS=0` and mount a folder holding the pinned revision:
 `docker run ... -v /path/to/Manchego:/models/manchego:ro manchego-serve:2.1-cuda`. The server hashes what it loads and
-reports whether the bytes are the published ones (`weights_verified` in `/healthz` and in every response).
+reports whether the bytes are the published ones (`weights_verified` for the weight files, `support_files_verified` for
+the chat template, tokenizer and config files; in `/healthz` and in every response).
 
 ### pip
 
@@ -60,7 +69,8 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 | `--execution` | `sequential` | `sequential`: one prompt per forward pass (the published numbers). `batched`: padded microbatches, faster, see below |
 | `--dtype`, `--device` | `auto` | torch: bf16 on CUDA, float32 on CPU |
 | `--max-prompt-tokens` | 32768 | per question, after the chat template |
-| `--max-questions` | 256 | per request |
+| `--max-questions` | 1024 | per request |
+| `--host`, `--port` | 127.0.0.1, 8000 | or `$MANCHEGO_HOST`, `$MANCHEGO_PORT` (the Docker image sets 0.0.0.0 and 8000) |
 | `--max-queue`, `--queue-timeout` | 32, 600 s | requests allowed to wait for the model, and for how long (then 529) |
 | `--no-hash`, `--no-warmup` | off | skip hashing the weight files / the warm-up at start-up |
 
@@ -88,8 +98,11 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 | `oraculumai/Manchego-MLX-8bit` | `79e55e2d0c4446abfe0d55d829e8854de9177c1b` | `model.safetensors` `ffa9e0c3…ed5ef43` | `6b0cb89600ffcc0941c557ac60a8445709d5f996a6baec24d9a92213ddccf84b` |
 | `oraculumai/Manchego-MLX-4bit` | `184016ce35c3a400880634352360b39cfdbb901e` | `model.safetensors` `301da641…e09e2` | `0fb734ac0221f4fcc314daae3ac2391f1eb41dc2f381ef9c2fe319907e49a98a` |
 
-Full hashes are in `manchego_serve/weights.py`. `weights_sha256` is the SHA-256 of the lines `"<file sha256>  <file name>\n"`
-sorted by name. The card's numbers are for the bf16 weights; the MLX 4-bit build loses accuracy (see the model card).
+Full hashes are in `manchego_serve/weights.py`, together with the pinned SHA-256 of each repository's
+`chat_template.jinja`, `config.json`, `model.safetensors.index.json`, `tokenizer.json` and `tokenizer_config.json`
+(`support_files_verified`: true only when all five are the published files of the same revision as the weights).
+`weights_sha256` is the SHA-256 of the lines `"<file sha256>  <file name>\n"` sorted by name. The card's numbers are for
+the bf16 weights; the MLX 4-bit build loses accuracy (see the model card).
 
 ## API
 
@@ -128,13 +141,15 @@ Response (this example came from the MLX 8-bit build on Apple silicon; bf16 on C
               "execution": "sequential", "model_repo": "oraculumai/Manchego-MLX-8bit",
               "model_revision": "79e55e2d0c4446abfe0d55d829e8854de9177c1b",
               "weights_sha256": "6b0cb89600ffcc0941c557ac60a8445709d5f996a6baec24d9a92213ddccf84b", "weights_verified": true,
+              "support_files_verified": true,
               "isolation": "one sequence per question; no question can attend to another",
               "contract_by_question": {"route": "short", "defective": "short", "urgency": "short"}, "forward_passes": 3}}
 ```
 
 `noul` is P(yes). `score` is the expected level `sum(i * p_i)`. `usage.input_tokens` is the total prompt length over all
 questions (each question re-reads the state). `GET /v1/models` lists `manchego-2.1` (alias `manchego-latest`).
-`GET /healthz` returns the `manchego` block plus the limits, the weight-file hashes, the runtime and the warm-up result.
+`GET /healthz` returns the `manchego` block plus the limits, the weight-file and support-file hashes, the runtime and the
+warm-up result.
 
 Errors: `{"detail": {"error_type": ..., "message": ...}}` with HTTP 422 (`invalid_request`), 401 (`authentication_error`,
 only with `MANCHEGO_API_KEYS`), 529 (`overloaded_error`, with `retry-after` and `retry-after-ms`) or 500. Nothing is ever
@@ -144,11 +159,14 @@ truncated to fit.
 
 | limit | value | HTTP 422 message contains |
 |---|---|---|
-| options per question (choice options, score levels) | 2 to 255 | `options per choice` (too many); `a choice needs at least two options` |
+| options per question (choice options, score levels) | 2 to 255 | `options per choice` (too many); `a choice needs at least two options`; `a score takes 2 to 10 levels` (a score with fewer than two levels) |
 | prompt length per question, after the chat template | 32,768 tokens | `maximum context length` |
-| questions per request | 256 | `questions; this server accepts at most` |
+| questions per request | 1,024 | `too many tokens` |
 
-The capacity phrases are the ones the Decision Index HTTP engine treats as "unsupported" rather than as an error.
+The capacity phrases are among those the Decision Index HTTP engine (`decision_index/engines/http.py`,
+`CAPACITY_MARKERS`) treats as "unsupported" rather than as an error; every capacity refusal carries one. Scores take 2
+to 255 levels here (the System One contract allows 2 to 10); the official API bounds a request's tokens rather than its
+questions, so the question limit is the one refusal with no official counterpart.
 The model was trained on prompts up to about 9,000 tokens; longer prompts are accepted up to the limit but untested.
 English only. Noul criteria should be strings: under the short prompt a JSON object there is inserted with Python's
 `repr`, exactly as in the reference implementation (parity is kept deliberately).
@@ -172,16 +190,20 @@ connection (it forces `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `HF_HUB_DISA
 is imported, and never downloads).
 
 - **Record `/healthz` with your results.** It names the weights (`model_repo`, `model_revision`, `weights_sha256`,
-  `weights_verified`: true only when the loaded bytes are the published ones for that revision), the precision, the
-  execution, the runtime (torch version, GPU name) and the warm-up.
+  `weights_verified`: true only when the loaded weight files are the published ones for that revision;
+  `support_files_verified`: the same for the chat template, tokenizer and config files), the precision, the execution,
+  the runtime (torch version, GPU name) and the warm-up.
 - **Warm-up** happens at start-up: a fixed invented request is scored twice before the port opens
   (`warmup.first_ms`, `warmup.second_ms`). Start latency measurements after `/healthz` answers.
   `warmup.repeat_identical` says whether the runtime reproduced itself bit for bit.
 - **Deterministic settings.** No sampling anywhere: temperature 1.0 over logits, one pass, one option order. Keep the
   default `--execution sequential`: each question is one forward pass with no padding, so its probabilities do not
   depend on which other questions share the request, or on the request's size. (`batched` changes the batch shape
-  and, at bf16, moves probabilities in the later digits; it never lets questions see each other.) The same image on the
-  same GPU model gives the same numbers; a different GPU, driver or library version can change the last digits.
+  and, at bf16, moves probabilities in the later digits; it never lets questions see each other.)
+  `warmup.repeat_identical` shows whether the runtime repeated itself bit for bit. A different GPU, CPU, driver or
+  library version changes the arithmetic, and at bf16 that is not confined to the last digits: the same code at bf16
+  on two CPU platforms (the CPU image on linux/arm64, and macOS) differed by up to 0.039 in probability on nine invented
+  requests. Compare runs only on the same hardware and image, and report the precision.
 - **Kernels.** The image uses Transformers' reference PyTorch kernels for Qwen3.5's linear-attention layers
   (`flash-linear-attention` and `causal-conv1d` are not installed; the log says so at start-up). This is the slower
   path; installing those packages speeds it up and changes the arithmetic slightly.
@@ -202,8 +224,8 @@ MANCHEGO_TEST_TORCH_MODEL=/path/to/Manchego pytest -s tests/test_numeric.py     
 
 `tests/fixtures/requests.json` holds 40 invented requests (46 questions: noul, choice with 2, 5, 26, 27, 40, 45, 60,
 100 and 255 options, score with 2 to 30 levels, text and JSON states, criteria with and without descriptions, structured
-instructions and descriptions). The golden files were produced by the reference implementation, the server that
-produced the published numbers:
+instructions and descriptions). The golden files were produced by the reference implementation (the project's
+research server, which implements the served policy; it is not public):
 
 - `golden_prompts.json`: its chat-templated prompt, token ids, contract and option-code token ids for all 46 questions.
   This package reproduces every prompt byte for byte and every id (checked with the tokenizers of both the bf16 and

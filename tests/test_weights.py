@@ -35,13 +35,46 @@ def test_identify_matches_a_pin_when_hashes_agree(tmp_path, monkeypatch):
     assert identify(str(tmp_path))["weights_match_pin"]["repo"] == "oraculumai/Manchego-MLX-4bit"
 
 
+def _pinned_hash(repo):
+    """sha256_file stand-in: the pinned hash of whichever file of `repo` is asked for (tampered files are handled by
+    writing the name 'tampered' into the file)."""
+    pin = PINS[repo]
+    def f(p):
+        if open(p, "rb").read() == b"tampered":
+            return hashlib.sha256(b"tampered").hexdigest()
+        return {**pin["files"], **pin["support"]}[os.path.basename(p)]
+    return f
+
+
 def test_download_refuses_bytes_that_do_not_match_the_pin(tmp_path, monkeypatch, capsys):
+    repo = "oraculumai/Manchego-MLX-4bit"
     (tmp_path / "model.safetensors").write_bytes(b"tampered")
+    for n in weights.SUPPORT_FILES:
+        (tmp_path / n).write_bytes(b"x")
     import huggingface_hub
     monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: str(tmp_path))
-    assert download.main(["--repo", "oraculumai/Manchego-MLX-4bit"]) == 1
-    monkeypatch.setattr(weights, "sha256_file", lambda p: PINS["oraculumai/Manchego-MLX-4bit"]["files"]["model.safetensors"])
-    assert download.main(["--repo", "oraculumai/Manchego-MLX-4bit"]) == 0
+    monkeypatch.setattr(weights, "sha256_file", _pinned_hash(repo))
+    assert download.main(["--repo", repo]) == 1                       # weights tampered
+    (tmp_path / "model.safetensors").write_bytes(b"x")
+    assert download.main(["--repo", repo]) == 0                       # everything as pinned
+    (tmp_path / "chat_template.jinja").write_bytes(b"tampered")
+    assert download.main(["--repo", repo]) == 1                       # chat template tampered
+    (tmp_path / "chat_template.jinja").unlink()
+    assert download.main(["--repo", repo]) == 1                       # chat template missing
+
+
+def test_support_files_are_pinned_per_repo_and_checked(tmp_path, monkeypatch):
+    for repo, pin in PINS.items():
+        assert set(pin["support"]) == set(weights.SUPPORT_FILES) and all(len(h) == 64 for h in pin["support"].values())
+    repo = "oraculumai/Manchego-MLX-8bit"
+    for n in ("model.safetensors",) + weights.SUPPORT_FILES:
+        (tmp_path / n).write_bytes(b"x")
+    monkeypatch.setattr(weights, "sha256_file", _pinned_hash(repo))
+    ident = identify(str(tmp_path))
+    assert ident["weights_match_pin"]["repo"] == repo and ident["support_files_match_pin"]
+    (tmp_path / "tokenizer.json").write_bytes(b"tampered")
+    ident = identify(str(tmp_path))
+    assert ident["weights_match_pin"]["repo"] == repo and not ident["support_files_match_pin"]
 
 
 def test_resolve_reads_the_local_cache_only():

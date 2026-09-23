@@ -12,7 +12,7 @@ from .contract import (AUTO, CONFIDENCE_DEFINITION, MAX_OPTIONS, PERMUTE, RENDER
 
 MODEL_NAME = "manchego-2.1"
 DEFAULT_MAX_PROMPT_TOKENS = 32768     # per question: state + question + options, after the chat template
-DEFAULT_MAX_QUESTIONS = 256           # per request; every question re-reads the state
+DEFAULT_MAX_QUESTIONS = 1024          # per request; every question re-reads the state
 DEFAULT_BATCH_TOKENS = 16384          # padded-token budget of one microbatch (execution "batched" only)
 EXECUTIONS = ("sequential", "batched")
 
@@ -92,7 +92,8 @@ class Decider:
         if not isinstance(body, dict) or "state" not in body or not isinstance(body.get("questions"), dict) or not body["questions"]:
             raise BadRequest("expected {state, model, questions: {name: question}}")
         if len(body["questions"]) > self.max_questions:
-            raise BadRequest(f"{len(body['questions'])} questions; this server accepts at most {self.max_questions} per request")
+            raise BadRequest(f"{len(body['questions'])} questions is too many tokens for one request: every question re-reads the state, "
+                             f"and this server accepts at most {self.max_questions} questions per request. Nothing is truncated: split the request.")
         plans = {}
         for name, q in body["questions"].items():            # question names are for the caller; they never reach the model
             try:
@@ -112,4 +113,5 @@ class Decider:
                 "contract": AUTO, "temperature": TEMPERATURE, "permute": PERMUTE, "confidence_definition": CONFIDENCE_DEFINITION,
                 "execution": self.execution, "model_repo": self.info.get("repo"), "model_revision": self.info.get("revision"),
                 "weights_sha256": self.info.get("weights_sha256"), "weights_verified": self.info.get("weights_verified"),
+                "support_files_verified": self.info.get("support_files_verified"),
                 "isolation": "one sequence per question; no question can attend to another"}

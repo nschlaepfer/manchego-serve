@@ -1,5 +1,5 @@
 {
-"note": "Rendered by the reference implementation (the server that produced the published numbers) on the invented requests in requests.json. Identical with the tokenizer of oraculumai/Manchego@77403228 and of oraculumai/Manchego-MLX-8bit@79e55e2d.",
+"note": "Rendered by the reference implementation (the project's research server, which implements the served policy) on the invented requests in requests.json. Identical with the tokenizer of oraculumai/Manchego@77403228 and of oraculumai/Manchego-MLX-8bit@79e55e2d.",
 "reference": "contract auto; chat template with add_generation_prompt=True, enable_thinking=False; encode with add_special_tokens=False",
 "questions": 46,
 "golden": {

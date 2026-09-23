@@ -6,11 +6,25 @@ import pytest
 from manchego_serve import contract as C
 from manchego_serve.decider import Decider
 
-# Capacity markers the Decision Index HTTP engine recognises in a 422 body
-# (github.com/apolinario/decision-index, decision_index/engines/http.py, CAPACITY_MARKERS).
+# Capacity markers the Decision Index HTTP engine recognises in a 400/413/422 body: a refusal carrying one is
+# "unsupported", anything else is an "error" (github.com/apolinario/decision-index @ 52a69892,
+# decision_index/engines/http.py, CAPACITY_MARKERS, copied verbatim).
+DECISION_INDEX_CAPACITY_MARKERS = (
+    "options per choice",
+    "a choice needs at least two options",
+    "a score takes 2 to 10 levels",
+    "the canvas holds",
+    "maximum context length",
+    "maximum model length",
+    "longer than the maximum model length",
+    "context window",
+    "too many tokens",
+)
 MARKER_TOO_MANY_OPTIONS = "options per choice"
 MARKER_TOO_LONG = "maximum context length"
 MARKER_TOO_FEW_OPTIONS = "a choice needs at least two options"
+MARKER_TOO_FEW_LEVELS = "a score takes 2 to 10 levels"
+MARKER_TOO_MANY_QUESTIONS = "too many tokens"
 
 
 class FakeTok:
@@ -104,11 +118,23 @@ def test_identical_questions_get_identical_answers():
     ({"type": "choice", "instructions": "x", "criteria": menu(256)}, MARKER_TOO_MANY_OPTIONS),
     ({"type": "score", "instructions": "x", "criteria": [str(i) for i in range(256)]}, MARKER_TOO_MANY_OPTIONS),
     ({"type": "choice", "instructions": "x", "criteria": {"only": None}}, MARKER_TOO_FEW_OPTIONS),
+    ({"type": "score", "instructions": "x", "criteria": ["only"]}, MARKER_TOO_FEW_LEVELS),
 ])
 def test_capacity_refusals_carry_the_markers(q, marker):
+    assert marker in DECISION_INDEX_CAPACITY_MARKERS
     with pytest.raises(C.BadRequest) as e:
         decider().handle({"state": STATE, "questions": {"q": q}})
     assert marker in str(e.value)
+
+
+def test_too_many_questions_carries_a_capacity_marker():
+    assert MARKER_TOO_MANY_QUESTIONS in DECISION_INDEX_CAPACITY_MARKERS
+    d = decider()
+    assert d.max_questions == 1024
+    d.handle({"state": STATE, "questions": {f"q{i}": NOUL for i in range(1024)}})
+    with pytest.raises(C.BadRequest) as e:
+        d.handle({"state": STATE, "questions": {f"q{i}": NOUL for i in range(1025)}})
+    assert MARKER_TOO_MANY_QUESTIONS in str(e.value)
 
 
 def test_too_long_prompt_is_refused_with_the_context_marker():
@@ -151,6 +177,10 @@ def test_http_roundtrip(client):
 def test_http_422_bodies_carry_markers(client):
     r = client.post("/v1/systemone", json={"state": STATE, "questions": {"q": {"type": "choice", "instructions": "x", "criteria": menu(300)}}})
     assert r.status_code == 422 and MARKER_TOO_MANY_OPTIONS in r.text
+    r = client.post("/v1/systemone", json={"state": STATE, "questions": {"q": {"type": "score", "instructions": "x", "criteria": ["one"]}}})
+    assert r.status_code == 422 and MARKER_TOO_FEW_LEVELS in r.text
+    r = client.post("/v1/systemone", json={"state": STATE, "questions": {f"q{i}": NOUL for i in range(1025)}})
+    assert r.status_code == 422 and MARKER_TOO_MANY_QUESTIONS in r.text
     assert r.json()["detail"]["error_type"] == "invalid_request"
     r = client.post("/v1/systemone", content=b"not json", headers={"content-type": "application/json"})
     assert r.status_code == 422

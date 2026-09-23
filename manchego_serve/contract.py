@@ -52,7 +52,8 @@ def options_of(q: dict) -> list[tuple[str, str | None]]:
         return [(str(k), None if v is None else _text(v)) for k, v in crit.items()]
     if kind == "score":
         if not isinstance(crit, list) or len(crit) < 2:
-            raise BadRequest("a score needs at least two levels (criteria: a list of level descriptions)")
+            raise BadRequest("a score needs at least two levels (criteria: a list of level descriptions). The System One contract says "
+                             f"a score takes 2 to 10 levels; this server accepts 2 to {LIMIT[AUTO]}.")
         return [(str(i), _text(d)) for i, d in enumerate(crit)]
     raise BadRequest(f"unknown question type {kind!r}; expected noul, choice or score")
 

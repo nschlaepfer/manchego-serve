@@ -116,7 +116,7 @@ def create_app(decider: Decider, api_keys: set[str] | None = None, max_queue: in
         return {"ok": True, **decider.describe(), "model": MODEL_NAME,
                 "limits": {"options_per_question": MAX_OPTIONS, "short_prompt_options": LIMIT["short"],
                            "max_prompt_tokens_per_question": decider.max_prompt_tokens, "max_questions_per_request": decider.max_questions},
-                "weight_files": decider.info.get("weight_files"), **(health_extra or {})}
+                "weight_files": decider.info.get("weight_files"), "support_files": decider.info.get("support_files"), **(health_extra or {})}
 
     @app.get("/v1/models")
     async def models():
@@ -166,7 +166,8 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
     model = model or DEFAULT_REPO[backend]
     model_dir, revision = resolve(model, revision)
     is_dir = Path(model).is_dir()
-    info: dict[str, Any] = {"repo": None if is_dir else model, "revision": revision, "weights_sha256": None, "weights_verified": None}
+    info: dict[str, Any] = {"repo": None if is_dir else model, "revision": revision, "weights_sha256": None, "weights_verified": None,
+                            "support_files_verified": None}
     if hash_weights:
         t0 = time.perf_counter()
         ident = identify(model_dir)
@@ -175,11 +176,15 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
             info["repo"] = pin["repo"]
             info["revision"] = info["revision"] or pin["revision"]
         verified = bool(pin) and pin["repo"] == info["repo"] and pin["revision"] == info["revision"]
-        info.update(weights_sha256=ident["weights_sha256"], weights_verified=verified, weight_files=ident["files"])
+        info.update(weights_sha256=ident["weights_sha256"], weights_verified=verified, weight_files=ident["files"],
+                    support_files_verified=verified and ident["support_files_match_pin"], support_files=ident["support_files"])
         log(f"weights: sha256 {ident['weights_sha256']} ({time.perf_counter() - t0:.1f} s); "
             + (f"these are the published bytes of {pin['repo']}@{pin['revision']} ({pin['tag']})" if pin else "NOT the bytes of any published v2.1 revision"))
         if pin and not verified:
             log(f"warning: declared {info['repo']}@{info['revision']}, but the bytes are {pin['repo']}@{pin['revision']}")
+        if pin and not ident["support_files_match_pin"]:
+            log("warning: the chat template, tokenizer or config files are NOT the published ones of that revision; "
+                "prompts or numbers may differ from the published policy")
     t0 = time.perf_counter()
     b = load_backend(backend, model_dir, dtype=dtype, device=device)
     log(f"loaded {backend} ({getattr(b, 'precision', '?')}) from {model_dir} in {time.perf_counter() - t0:.1f} s")
@@ -195,8 +200,8 @@ def main(argv: list[str] | None = None) -> int:
                     "local cache (default: $MANCHEGO_MODEL, else oraculumai/Manchego for torch, oraculumai/Manchego-MLX-8bit for mlx)")
     ap.add_argument("--revision", default=os.environ.get("MANCHEGO_REVISION"),
                     help="full commit sha of --model (default: $MANCHEGO_REVISION, else the pinned v2.1 revision)")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--host", default=os.environ.get("MANCHEGO_HOST", "127.0.0.1"), help="default: $MANCHEGO_HOST, else 127.0.0.1")
+    ap.add_argument("--port", type=int, default=int(os.environ.get("MANCHEGO_PORT", "8000")), help="default: $MANCHEGO_PORT, else 8000")
     ap.add_argument("--execution", choices=EXECUTIONS, default="sequential",
                     help="sequential (default): one prompt per forward pass, as the published numbers were read; "
                          "batched: padded microbatches, faster, moves probabilities slightly at bf16/8-bit")
