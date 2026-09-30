@@ -136,7 +136,15 @@ class Decider:
                              "temperature_by_question": temps, "forward_passes": calls}}
 
     def describe(self) -> dict:
-        """What produced the numbers. Reported in every response and by /healthz."""
+        """What produced the numbers. Reported in every response and by /healthz. `fast_path` appears only when a
+        fast-path piece is on (backends/fast_path.py)."""
+        d = self._describe()
+        fast = getattr(self.b, "fast_path", None)
+        if fast:
+            d["fast_path"] = fast
+        return d
+
+    def _describe(self) -> dict:
         return {"server": f"manchego-serve {__version__}", "backend": self.b.name, "precision": getattr(self.b, "precision", None),
                 "contract": self.contract, "temperature": self.tmap.wire_temperature(), "temperature_map": self.tmap.describe(),
                 "permute": PERMUTE, "confidence_definition": CONFIDENCE_DEFINITION,

@@ -32,6 +32,7 @@ except ImportError:  # pragma: no cover - the contract and backends work without
 from . import model_config as MC
 from . import temperature as TM
 from .contract import POLICIES, SEMIF, SEMIF_MAX_OPTIONS, BadRequest, LIMIT, MAX_OPTIONS
+from .backends.fast_path import DEFAULT_BUCKETS
 from .decider import DEFAULT_BATCH_TOKENS, DEFAULT_MAX_PROMPT_TOKENS, DEFAULT_MAX_QUESTIONS, EXECUTIONS, MODEL_NAME, Decider
 
 RELEASE_DATE = "2026-09-21"
@@ -171,7 +172,7 @@ def warm_up(decider: Decider) -> dict:
 def build(backend: str, model: str | None, revision: str | None, execution: str = "sequential", dtype: str = "auto",
           device: str = "auto", batch_tokens: int = DEFAULT_BATCH_TOKENS, max_prompt_tokens: int = DEFAULT_MAX_PROMPT_TOKENS,
           max_questions: int = DEFAULT_MAX_QUESTIONS, hash_weights: bool = True, log=print,
-          temperature_map: str | None = "default", contract: str | None = "model") -> Decider:
+          temperature_map: str | None = "default", contract: str | None = "model", fast=None) -> Decider:
     force_offline()
     tmap = TM.load(temperature_map)          # fail fast on a bad map, before the weights are read
     from .backends import load_backend
@@ -209,8 +210,13 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
                       contract=policy)
     log(f"temperature map: {tmap.source}, T = {tmap.temperatures} ({tmap.binding or tmap.note})")
     t0 = time.perf_counter()
-    b = load_backend(backend, model_dir, dtype=dtype, device=device)
+    b = load_backend(backend, model_dir, dtype=dtype, device=device, fast=fast)
     log(f"loaded {backend} ({getattr(b, 'precision', '?')}) from {model_dir} in {time.perf_counter() - t0:.1f} s")
+    runtime = getattr(b, "runtime", None) or {}
+    if runtime.get("gdn_kernels"):
+        log(f"linear-attention kernels: {runtime['gdn_kernels']}")
+    if getattr(b, "fast_path", None):
+        log(f"fast path: {b.fast_path}")
     info["model_config"] = {**cfg.describe(), "contract": policy, "contract_source": source}
     if cfg.served_name:
         info["model_label"] = " ".join(x for x in (cfg.model, cfg.version) if x) or cfg.served_name
@@ -248,6 +254,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "(schema 2 is bound to one model's weights_sha256 and refused for any other). Default: "
                          "$MANCHEGO_TEMPERATURE_MAP, else 'default'. It never changes the chosen option")
     ap.add_argument("--no-temperature-map", action="store_true", help="same as --temperature-map off")
+    ap.add_argument("--gdn-kernels", choices=("reference", "fast"), default=os.environ.get("MANCHEGO_GDN_KERNELS") or "reference",
+                    help="torch, CUDA: Qwen3.5's gated-delta-net layers. 'reference' (default): Transformers' PyTorch functions "
+                         "even when flash-linear-attention / causal-conv1d are installed; 'fast': those kernels where importable "
+                         "(changes the arithmetic; docs/FAST_PATH.md). Default: $MANCHEGO_GDN_KERNELS, else reference")
+    ap.add_argument("--cuda-graphs", action="store_true", default=_env_flag("MANCHEGO_CUDA_GRAPHS"),
+                    help="torch, CUDA: replay one-prompt forwards as CUDA graphs captured at start-up at padded lengths "
+                         "(--graph-buckets); changes the arithmetic slightly. Default: $MANCHEGO_CUDA_GRAPHS=1, else off")
+    ap.add_argument("--graph-buckets", default=os.environ.get("MANCHEGO_GRAPH_BUCKETS") or ",".join(map(str, DEFAULT_BUCKETS)),
+                    help="padded prompt lengths captured by --cuda-graphs (default 256,512,1024,2048); longer prompts run eagerly")
+    ap.add_argument("--fast-host", action="store_true", default=_env_flag("MANCHEGO_FAST_HOST"),
+                    help="torch: one-prompt calls without the host syncs they do not need (bit for bit the reference readout). "
+                         "Default: $MANCHEGO_FAST_HOST=1, else off")
+    ap.add_argument("--fast-path", action="store_true", help="all three: --gdn-kernels fast --cuda-graphs --fast-host")
     ap.add_argument("--contract", choices=("model",) + POLICIES, default=os.environ.get("MANCHEGO_CONTRACT") or "model",
                     help="prompt policy: 'model' (default: the `contract` field of the model folder's manchego_config.json, "
                          "'auto' when absent, as for Manchego v2.1), 'auto' (short prompt up to 26 options, state-first beyond) or "
@@ -256,7 +275,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = ap.parse_args(argv)
     if args.no_temperature_map:
         args.temperature_map = "off"
+    if args.fast_path:
+        args.gdn_kernels, args.cuda_graphs, args.fast_host = "fast", True, True
     return args
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def fast_config(args: argparse.Namespace):
+    """The fast-path configuration the command line asks for (backends/fast_path.py)."""
+    from .backends.fast_path import FastPathConfig, parse_buckets
+    return FastPathConfig(gdn_kernels=args.gdn_kernels, cuda_graphs=args.cuda_graphs, graph_buckets=parse_buckets(args.graph_buckets),
+                          fast_host=args.fast_host)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -268,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
 
     decider = build(args.backend, args.model, args.revision, args.execution, args.dtype, args.device, args.batch_tokens,
                     args.max_prompt_tokens, args.max_questions, hash_weights=not args.no_hash, log=log,
-                    temperature_map=args.temperature_map, contract=args.contract)
+                    temperature_map=args.temperature_map, contract=args.contract, fast=fast_config(args))
     extra: dict[str, Any] = {"runtime": getattr(decider.b, "runtime", None)}
     if not args.no_warmup:
         extra["warmup"] = warm_up(decider)
