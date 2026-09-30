@@ -1,6 +1,6 @@
-"""The opt-in fast path (0.2.0.dev, backends/fast_path.py). CUDA is not needed: the kernel switch is tested with fake
-kernel modules, CUDA-graph capture with a fake torch.cuda and with an eager stand-in on a tiny random Qwen3.5 model on
-CPU. docs/FAST_PATH.md has the checks that need an NVIDIA GPU."""
+"""The fast path (0.2.0, backends/fast_path.py) and the model folder's serving defaults. CUDA is not needed: the kernel
+switch is tested with fake kernel modules, CUDA-graph capture with a fake torch.cuda and with an eager stand-in on a tiny
+random Qwen3.5 model on CPU. docs/FAST_PATH.md has the checks that need an NVIDIA GPU."""
 import json
 import types
 
