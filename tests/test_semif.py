@@ -1,8 +1,10 @@
 """Contract "semif" (0.2.0): the SemIf prompt, exactly as the research repository trains and reads it, with the contract v2
 overflow; chosen per model by manchego_config.json. golden_semif.json was recorded from the training code alone
 (tests/record_semif_golden.py); nothing here imports the training repository."""
+import ast
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -18,7 +20,9 @@ from test_server import FakeBackend, menu
 GOLDEN = load("golden_semif.json")
 REQS = {r["id"]: r for r in load("semif_requests.json")["requests"]}
 CASES = sorted(GOLDEN["cases"])
-HEADER_LINES = 3   # the release note prepended to the vendored renderer
+# sha256 of code_of() of the training code's renderer, the file recorded in golden_semif.json["renderer"] (sha256
+# 86740b8d..., commit 0da1e038). contract_semif.py has its own documentation; its code must be exactly this.
+RENDERER_CODE_SHA256 = "84908917ad4c300b891516d5c7d116c5273c21642d7915d7df1476bc5337f235"
 
 
 def shown_as(g: dict) -> str:
@@ -26,14 +30,53 @@ def shown_as(g: dict) -> str:
 
 
 # ------------------------------------------------------------------ provenance
-def test_vendored_renderer_is_the_training_file():
-    raw = Path(SR.__file__).read_bytes()
-    lines = raw.split(b"\n", HEADER_LINES)
-    assert all(line.startswith(b"# ") for line in lines[:HEADER_LINES])
-    body = lines[HEADER_LINES]
-    assert hashlib.sha256(body).hexdigest() == GOLDEN["renderer"]["sha256"]
-    assert hashlib.sha1(b"blob %d\0" % len(body) + body).hexdigest() == GOLDEN["renderer"]["git_blob"]
+def code_of(source: str) -> str:
+    """A module's code: its source without its docstrings (the module's and every function's and class's, located by
+    the parser), comments and blank lines. Every other line is kept byte for byte, so two modules with the same code_of
+    run the same code whatever their documentation says."""
+    tree = ast.parse(source)
+    drop = set()
+    for node in [tree] + [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]:
+        first = node.body[0] if node.body else None
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            drop.update(range(first.lineno, first.end_lineno + 1))
+    lines = (line.rstrip() for i, line in enumerate(source.splitlines(), 1) if i not in drop)
+    return "".join(line + "\n" for line in lines if line.strip() and not line.lstrip().startswith("#"))
+
+
+def test_renderer_code_is_the_training_code():
+    code = code_of(Path(SR.__file__).read_text(encoding="utf-8"))
+    assert hashlib.sha256(code.encode()).hexdigest() == RENDERER_CODE_SHA256
     assert SR.PROMPT_VERSION == GOLDEN["renderer"]["prompt_version"] == "direct-options-v1"
+    assert [n for n in vars(SR) if callable(vars(SR)[n]) and getattr(vars(SR)[n], "__module__", "") == SR.__name__] == [
+        "_text", "option_keys_and_texts", "render", "prompt_text"]
+
+
+def test_code_of_ignores_documentation_only():
+    base = '# header\n"""doc"""\nimport json\n\n\ndef f(x):\n    """doc\n    more"""\n    # note\n    return json.dumps(x)  # kept\n'
+    assert code_of(base) == "import json\ndef f(x):\n    return json.dumps(x)  # kept\n"
+    assert code_of(base.replace('"""doc"""', '"""other text\n\nover lines"""')) == code_of(base)
+    assert code_of(base.replace("json.dumps(x)", "json.dumps(x, indent=1)")) != code_of(base)
+
+
+def test_renderer_documentation_is_for_publication():
+    """The file ships next to the v3 weights: its documentation names no research-repository path and does not call
+    itself a draft."""
+    doc = " ".join(d for d in [SR.__doc__] + [f.__doc__ for f in (SR.option_keys_and_texts, SR.render, SR.prompt_text)] if d)
+    for banned in ("NOT the served contract", "serve_systemone", "scripts/", "runs/", "qwen_decisions", "draft"):
+        assert banned not in doc
+    assert "https://github.com/TheoLeeCJ/SemIf" in SR.__doc__ and "MIT" in SR.__doc__
+
+
+def test_renderer_code_against_the_training_file():
+    """Optional, when the training repository's renderer is at hand (MANCHEGO_TEST_SEMIF_RENDERER=<its path>): the recorded
+    code hash is that file's, and that file is the one golden_semif.json was recorded from."""
+    path = os.environ.get("MANCHEGO_TEST_SEMIF_RENDERER")
+    if not path:
+        pytest.skip("set MANCHEGO_TEST_SEMIF_RENDERER to the training code's semif_contract.py")
+    raw = Path(path).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == GOLDEN["renderer"]["sha256"]
+    assert hashlib.sha256(code_of(raw.decode("utf-8")).encode()).hexdigest() == RENDERER_CODE_SHA256
 
 
 def test_fixture_coverage():

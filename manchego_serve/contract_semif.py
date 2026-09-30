@@ -1,11 +1,14 @@
-# Release note: everything below these three lines is copied unchanged from the Manchego research repository (qwen_decisions/semif_contract.py,
-# commit 0da1e038, sha256 86740b8d; tests/test_semif.py checks it). "serve_systemone" below is the research server: in manchego-serve this
-# renderer IS the served contract "semif", with the contract v2 overflow of the development reads (contract.py, prompt_for).
-"""SemIf-compatible prompt renderer (SemIf `direct-options-v1`, MIT, github.com/TheoLeeCJ/SemIf-OpenJev core.py/direct.py),
-with JevBench's `semif_direct` mapping of a System One question onto it (replicated in scripts/jevbench_local.py).
+# Copyright 2026 oraculumai
+# SPDX-License-Identifier: Apache-2.0
+"""Contract "semif": the prompt Manchego v3 was trained with, SemIf's `direct-options-v1` prompt, with JevBench's
+`semif_direct` mapping of a System One question onto it. SemIf (formerly OpenJev, https://github.com/TheoLeeCJ/SemIf) is
+MIT-licensed; the system message below is its text (see NOTICE).
 
-Pure functions, no ML import. NOT the served contract: serve_systemone.render_semif stays the serving path; this module is
-the draft for training and for the judge-tier A/B (runs/research/SEMIF_PROMPT_DIFF.md).
+Pure functions, no ML import. In manchego-serve this is the renderer of the served contract "semif": contract.py
+(`prompt_for`) renders a question with it when SemIf can show the question (2 to 16 options and a nonempty state), and
+with the state-first prompt of contract_v2.py otherwise. The code of this module is the training code's renderer,
+unchanged; only the documentation was written for publication. manchego-serve's tests/test_semif.py checks both: the
+code, and every prompt against fixtures recorded from the training code.
 
     system  "Apply the supplied criterion to the supplied evidence. Choose exactly one listed option. Respond with only
              its uppercase letter, with no explanation or reasoning."
@@ -39,8 +42,8 @@ def _text(x: Any) -> str:
 
 
 def option_keys_and_texts(kind: str, options: list[tuple[str, Any]]) -> list[tuple[str, str]]:
-    """(key, description) in rendering order. `options` is [(value, description-or-None)], as serve_systemone.options_of
-    returns them; for noul the order is forced to true, false whatever order the caller used."""
+    """(key, description) in rendering order. `options` is [(value, description-or-None)], as contract.options_of returns
+    them; for noul the order is forced to true, false whatever order the caller used."""
     if kind not in KINDS:
         raise ValueError(f"unknown kind {kind!r}")
     if kind == "noul":
