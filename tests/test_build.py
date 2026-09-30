@@ -194,5 +194,6 @@ def test_build_reads_a_version_name_as_the_pinned_commit(tiny_folder):
     from manchego_serve.weights import PINS, RevisionError
     d = server_build("torch", str(tiny_folder), "v2.1", dtype="float32", device="cpu", log=lambda m: None)
     assert d.info["revision"] == PINS["oraculumai/Manchego"]["revision"] and d.info["weights_verified"] is False
-    with pytest.raises(RevisionError, match="placeholder"):                  # until V3_REVISION is filled in
-        server_build("torch", str(tiny_folder), "v3", dtype="float32", device="cpu", log=lambda m: None)
+    from manchego_serve.weights import V3_REVISION
+    d3 = server_build("torch", str(tiny_folder), "v3", dtype="float32", device="cpu", log=lambda m: None)
+    assert d3.info["revision"] == V3_REVISION and d3.info["weights_verified"] is False           # tiny weights match no pin

@@ -8,10 +8,9 @@ MLX 4-bit):
   v2.1  tag `v2.1`. The SHA-256 of every weight file is the Hub's own LFS object id for that file at that revision; the
         support files that shape the prompt and the model (chat template, tokenizer, configs) were hashed from copies
         whose git blob ids (or LFS ids) equal the Hub's at that revision.
-  v3    the default once its revisions are pinned. Every SHA-256 was computed from the release builds that are uploaded
-        (2026-09-30). The revisions (V3_REVISION, V3_MLX8_REVISION, V3_MLX4_REVISION) are PLACEHOLDERS until the Hub
-        upload: until each is a full commit sha, v3 is not a published revision here, downloads and the server default
-        to v2.1, and v3 weights are reported as matching no pin.
+  v3    the default (tag `v3`, uploaded 2026-09-30). Every SHA-256 was computed from the release builds that were uploaded,
+        and each upload was verified against them (every LFS object id equal). The revisions (V3_REVISION,
+        V3_MLX8_REVISION, V3_MLX4_REVISION) are the commits of that upload.
 
 A version name (`v3`, `v2.1`) may stand for a revision: it means the commit this package pins, never the Hub's tag of
 that name. At start-up the server hashes the files it loads and reports whether they match a pinned revision. Nothing
@@ -28,9 +27,9 @@ from pathlib import Path
 
 # Manchego v3's commits on the Hub. PLACEHOLDERS: each is replaced by the full 40-character sha of the commit that holds
 # the v3 files, after the upload (the release plan's commit A), and before this package is tagged.
-V3_REVISION = "REVISION_V3"              # PLACEHOLDER: oraculumai/Manchego
-V3_MLX8_REVISION = "MLX8_REVISION_V3"    # PLACEHOLDER: oraculumai/Manchego-MLX-8bit
-V3_MLX4_REVISION = "MLX4_REVISION_V3"    # PLACEHOLDER: oraculumai/Manchego-MLX-4bit
+V3_REVISION = "f82e029d0ad4d1bdd1ca12f5f7b548b84fabc9a9"       # oraculumai/Manchego, tag v3 (2026-09-30)
+V3_MLX8_REVISION = "4ebdc0dd50481cfa9e40f83f05571ee59e53041d"  # oraculumai/Manchego-MLX-8bit, tag v3
+V3_MLX4_REVISION = "0c17e076e8e358e41a9f8332dca062e4942ace0b"  # oraculumai/Manchego-MLX-4bit, tag v3
 
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 BF16_SUPPORT = {   # identical in v2.1 and v3

@@ -16,10 +16,9 @@ folder's `manchego_config.json` and from the weights' hash ([what changed in 0.2
 The model cards' numbers are at temperature 1.0: `--temperature-map off` reads every model that way. `--no-fast-path`
 gives the reference arithmetic. A temperature never changes the chosen option.
 
-> **Until the v3 upload.** This package pins Manchego v3's bytes, but its Hub revisions are placeholders
-> (`REVISION_V3`, `MLX8_REVISION_V3` and `MLX4_REVISION_V3` in `manchego_serve/weights.py`), filled in once v3 is on the
-> Hub. Until then `manchego-serve-download`, the server's default model and the Docker image default to v2.1, and v3
-> is served from a local folder (`--model /path/to/Manchego-v3`).
+> **Manchego v3** is the default (Hub tag `v3`, pinned here by commit): `manchego-serve-download`, the server's default
+> model and the Docker image fetch v3. Manchego v2.1 stays available by name (`--revision v2.1`,
+> `--build-arg MANCHEGO_VERSION=v2.1`).
 
 The server never opens an outbound connection:
 the weights are fetched once at setup (pinned by full commit sha, checked against the pinned SHA-256 of every weight
@@ -275,9 +274,9 @@ the weights were not hashed (`--no-hash`), or when `contract` is not the served 
 
 | repository | version | revision | weight files (SHA-256) | `weights_sha256` reported |
 |---|---|---|---|---|
-| `oraculumai/Manchego` (bf16, torch) | v3 | `REVISION_V3` (placeholder until the upload) | `model.safetensors-00001-of-00002.safetensors` `036f8c81…86b89d`, `-00002-of-00002` `44fb326e…428af6` | `2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b` |
-| `oraculumai/Manchego-MLX-8bit` | v3 | `MLX8_REVISION_V3` (placeholder) | `model.safetensors` `02546297…248e85` | `358b025b04001e50a065f8c87929175211264bd6182af74b67bd6caa2f639657` |
-| `oraculumai/Manchego-MLX-4bit` | v3 | `MLX4_REVISION_V3` (placeholder) | `model.safetensors` `a6e8ea1e…8428be` | `e1bc5538b8dced2a857b4980dba045c2ca01db1c369aa416fc19f0f5c593e782` |
+| `oraculumai/Manchego` (bf16, torch) | v3 | `f82e029d0ad4d1bdd1ca12f5f7b548b84fabc9a9` | `model.safetensors-00001-of-00002.safetensors` `036f8c81…86b89d`, `-00002-of-00002` `44fb326e…428af6` | `2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b` |
+| `oraculumai/Manchego-MLX-8bit` | v3 | `4ebdc0dd50481cfa9e40f83f05571ee59e53041d` | `model.safetensors` `02546297…248e85` | `358b025b04001e50a065f8c87929175211264bd6182af74b67bd6caa2f639657` |
+| `oraculumai/Manchego-MLX-4bit` | v3 | `0c17e076e8e358e41a9f8332dca062e4942ace0b` | `model.safetensors` `a6e8ea1e…8428be` | `e1bc5538b8dced2a857b4980dba045c2ca01db1c369aa416fc19f0f5c593e782` |
 | `oraculumai/Manchego` (bf16, torch) | v2.1 | `77403228b7dfdf823af99a5f562bdcf80b708d4c` (tag `v2.1`) | `model.safetensors-00001-of-00002.safetensors` `1d5df0ff…89efe3`, `-00002-of-00002` `b12ea489…e5aa0a` | `1130745e2a9506ece5a35a1d3da5ad1ce17e8a05052d8fc45d1971986bd8de61` |
 | `oraculumai/Manchego-MLX-8bit` | v2.1 | `79e55e2d0c4446abfe0d55d829e8854de9177c1b` (tag `v2.1`) | `model.safetensors` `ffa9e0c3…ed5ef43` | `6b0cb89600ffcc0941c557ac60a8445709d5f996a6baec24d9a92213ddccf84b` |
 | `oraculumai/Manchego-MLX-4bit` | v2.1 | `184016ce35c3a400880634352360b39cfdbb901e` (tag `v2.1`) | `model.safetensors` `301da641…e09e2` | `0fb734ac0221f4fcc314daae3ac2391f1eb41dc2f381ef9c2fe319907e49a98a` |

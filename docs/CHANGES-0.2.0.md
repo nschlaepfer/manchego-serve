@@ -2,7 +2,7 @@
 
 **Status.** `0.2.0` on the local branch `fast-path`. It is not tagged, pushed, published or built into an image. The
 published version is 0.1.1; 0.1.2 (the v2.1 temperature map) exists only on local `main`, and 0.2.0 builds on it.
-Before it is tagged, the v3 Hub revisions must be filled in ([Placeholders](#placeholders-left)).
+The v3 Hub revisions are filled in: Manchego `f82e029d`, MLX-8bit `4ebdc0dd`, MLX-4bit `0c17e076` (tag `v3`, 2026-09-30); v3 is the default.
 
 **What it serves.** Manchego v3, the new default model, and Manchego v2.1, each under its own published policy. The
 model folder's `manchego_config.json` selects the prompt contract and the default fast path; the weights' hash
@@ -206,3 +206,6 @@ transformers 5.17.0 but no fastapi (both Python 3.12.11). The tokenizer is v2.1'
 ## Version
 
 `pyproject.toml` and `manchego_serve.__version__` are `0.2.0`. Responses say `"server": "manchego-serve 0.2.0"`.
+
+
+**Filled in 2026-09-30:** `V3_REVISION = f82e029d0ad4d1bdd1ca12f5f7b548b84fabc9a9`, `V3_MLX8_REVISION = 4ebdc0dd50481cfa9e40f83f05571ee59e53041d`, `V3_MLX4_REVISION = 0c17e076e8e358e41a9f8332dca062e4942ace0b` (the verified upload commits); the Dockerfile default is `v3`; the README note and table cells are updated.

@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 #
 # Manchego on the System One wire contract, offline at run time. MANCHEGO_VERSION selects the model: v3 or v2.1.
-# The default is v2.1 until this package pins v3's Hub revision (manchego_serve/weights.py, V3_REVISION: a placeholder
-# until the v3 upload); then it becomes v3 (tests/test_weights.py fails until this default follows the pin).
+# The default is v3, the commit manchego_serve/weights.py pins (V3_REVISION); tests/test_weights.py checks this default
+# follows the newest pinned version.
 #
 # CUDA (default; linux/amd64; torch 2.10.0 built for CUDA 12.8; NVIDIA driver R570+ recommended, required on RTX 50-series):
 #   docker build -t manchego-serve:2.1-cuda --build-arg MANCHEGO_VERSION=v2.1 .
-#   docker build -t manchego-serve:3-cuda --build-arg MANCHEGO_VERSION=v3 .        # once V3_REVISION is pinned
-#   docker run --rm --gpus all -p 127.0.0.1:8000:8000 manchego-serve:2.1-cuda
+#   docker build -t manchego-serve:3-cuda --build-arg MANCHEGO_VERSION=v3 .        # the default
+#   docker run --rm --gpus all -p 127.0.0.1:8000:8000 manchego-serve:3-cuda
 #
 # CPU (amd64 or arm64; float32 by default, needs ~20 GB RAM; append `--dtype bfloat16` to the run command for ~10 GB):
 #   docker build -t manchego-serve:2.1-cpu \
@@ -29,7 +29,7 @@ FROM ${BASE_IMAGE}
 ARG TORCH_VERSION=2.10.0
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cu128
 ARG DOWNLOAD_WEIGHTS=1
-ARG MANCHEGO_VERSION=v2.1
+ARG MANCHEGO_VERSION=v3
 ARG MODEL_REPO=oraculumai/Manchego
 ARG MODEL_REVISION=
 
