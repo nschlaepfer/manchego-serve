@@ -8,14 +8,38 @@ manchego_serve/contract_v2.py is copied unchanged from the Manchego v2.1 model r
 77403228b7dfdf823af99a5f562bdcf80b708d4c, tag v2.1; git blob a6c586acbf861ce55e4a4ed6dfd78d7d4515f5d5),
 which is distributed under the Apache License, Version 2.0. Copyright 2026 oraculumai.
 
-manchego_serve/contract_semif.py is copied unchanged (below a three-line release note) from the Manchego research
-repository (qwen_decisions/semif_contract.py, sha256 86740b8de986e1b4390075266573adc9ef5b7a96e280c25c696255a807c59c31),
-Apache License, Version 2.0, Copyright 2026 oraculumai. It renders prompts in the format of SemIf's `direct-options-v1`
-prompt (SemIf-OpenJev, https://github.com/TheoLeeCJ/SemIf-OpenJev, MIT License), including SemIf's system message text.
+manchego_serve/contract_semif.py is the prompt renderer Manchego v3 was trained with (Apache License, Version 2.0,
+Copyright 2026 oraculumai): its code is the training code's, unchanged, and its documentation was written for this
+package. It renders prompts in the format of the `direct-options-v1` prompt of SemIf (formerly OpenJev),
+https://github.com/TheoLeeCJ/SemIf, and includes SemIf's system message text, which is used under SemIf's licence:
 
-This software serves, and does not contain, the Manchego v2.1 weights. Those weights are a modified version of
+    MIT License
+
+    Copyright (c) 2026 TheoLeeCJ
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+SemIf is an independent project; manchego-serve is not affiliated with or endorsed by it.
+
+This software serves, and does not contain, the Manchego weights (v3 and v2.1). They are modified versions of
 Qwen3.5-4B (https://huggingface.co/Qwen/Qwen3.5-4B, Apache License 2.0, Copyright 2026 Alibaba Cloud); their own
-NOTICE and model card (https://huggingface.co/oraculumai/Manchego) carry the attribution of the base model and of the
+NOTICE and model cards (https://huggingface.co/oraculumai/Manchego) carry the attribution of the base model and of the
 training data. A container image built with the weights inside redistributes them under those terms.
 
 The HTTP interface follows TypeSafe AI's System One wire contract. manchego-serve is an independent project, not

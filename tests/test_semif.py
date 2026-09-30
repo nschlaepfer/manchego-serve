@@ -68,6 +68,14 @@ def test_renderer_documentation_is_for_publication():
     assert "https://github.com/TheoLeeCJ/SemIf" in SR.__doc__ and "MIT" in SR.__doc__
 
 
+def test_notice_credits_semif():
+    notice = (Path(__file__).resolve().parents[1] / "NOTICE").read_text(encoding="utf-8")
+    assert "SemIf (formerly OpenJev)" in notice and "https://github.com/TheoLeeCJ/SemIf," in notice
+    assert "MIT License" in notice and "Copyright (c) 2026 TheoLeeCJ" in notice
+    assert "The above copyright notice and this permission notice shall be included in all" in notice
+    assert "SemIf-OpenJev" not in notice
+
+
 def test_renderer_code_against_the_training_file():
     """Optional, when the training repository's renderer is at hand (MANCHEGO_TEST_SEMIF_RENDERER=<its path>): the recorded
     code hash is that file's, and that file is the one golden_semif.json was recorded from."""
