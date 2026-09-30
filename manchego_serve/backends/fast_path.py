@@ -250,8 +250,10 @@ class GraphBuckets:
         buf[n:L] = self.pad_id
         buf[L] = n - 1
         with self.torch.inference_mode():             # the static buffers were made in inference mode
-            self.ids[L].copy_(host[:L].view(1, L), non_blocking=True)
-            self.last[L].copy_(host[L:], non_blocking=True)
+            # non-blocking only from pinned memory (CUDA): from pageable memory a non-blocking copy may read the host
+            # buffer after it has changed (on MPS it does, every time)
+            self.ids[L].copy_(host[:L].view(1, L), non_blocking=self.pin)
+            self.last[L].copy_(host[L:], non_blocking=self.pin)
             self.replay[L]()
         return self.out[L]
 
@@ -276,11 +278,14 @@ class SinglePath:
         self.masks = no_masks(self.model)
 
     def _to_device(self, values: list[int]):
+        """One copy to the device; non-blocking only from pinned memory (CUDA: PyTorch's pinned allocator keeps the block
+        until the copy is done). From a temporary pageable tensor a non-blocking copy can read freed memory: on MPS it
+        does, every time."""
         t = self.torch
         host = t.tensor(values, dtype=t.long)
         if self.pin:
-            host = host.pin_memory()
-        return host.to(self.device, non_blocking=True)
+            return host.pin_memory().to(self.device, non_blocking=True)
+        return host.to(self.device)
 
     def candidate_rows(self, cands: list[int]):
         """float32 output-matrix rows of these option codes, (K, D); the same values as W[cands].float()."""

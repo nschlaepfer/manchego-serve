@@ -240,6 +240,23 @@ def test_fast_host_is_bit_for_bit_the_reference(tiny):
     assert len(fast._single.rows) == len({tuple(c) for _, c in prompts(torch)})
 
 
+def test_fast_host_is_bit_for_bit_on_mps(tiny):
+    """Regression: a non-blocking copy from pageable host memory to MPS reads freed memory; the fast path copies
+    non-blocking only from pinned memory (CUDA)."""
+    torch, m = tiny
+    if not torch.backends.mps.is_available():
+        pytest.skip("no MPS device")
+    from manchego_serve.backends.torch_backend import TorchBackend
+    m_mps = type(m)(m.config).eval()
+    m_mps.load_state_dict(m.state_dict())
+    m_mps.to("mps")
+    ref = TorchBackend.from_model(m_mps, Tok(), device="mps")
+    fast = TorchBackend.from_model(m_mps, Tok(), device="mps", fast=FP.FastPathConfig(fast_host=True))
+    for _ in range(3):
+        for ids, cands in prompts(torch):
+            assert fast.logits_batch([(ids, cands)]) == ref.logits_batch([(ids, cands)])
+
+
 def test_the_no_mask_mapping_is_the_all_ones_mask(tiny):
     torch, m = tiny
     ids = torch.tensor([prompts(torch)[3][0]])
