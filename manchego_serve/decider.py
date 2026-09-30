@@ -38,7 +38,7 @@ class Decider:
 
     temperature_map: one temperature per question type, applied to the option-code logits before the softmax
     (temperature.py). The default here is `temperature.OFF` (T = 1.0, the v0.1.0 readout); the server's command line
-    loads the fitted v2.1 map by default. A temperature never changes the chosen option.
+    applies the packaged map bound to the loaded weights by hash, if any. A temperature never changes the chosen option.
 
     contract: the prompt policy, "auto" (default; Manchego v2.1) or "semif" (contract.py), normally the model folder's
     manchego_config.json (model_config.py). model_name: the name put in every response.

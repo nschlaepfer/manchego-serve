@@ -154,3 +154,107 @@ def test_noul_abstention_band_arithmetic():
         assert 0.2 < C.answer(q, opts, [margin, 0.0], T)["noul"] < 0.8
         assert 0.2 < C.answer(q, opts, [0.0, margin], T)["noul"] < 0.8 and C.answer(q, opts, [0.0, margin], 1.0)["noul"] <= 0.2
     assert C.answer(q, opts, [hi + 0.01, 0.0], T)["noul"] >= 0.8
+
+
+# ------------------------------------------------------------------ the packaged Manchego v3 map (0.2.0)
+V3_BF16 = "2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b"
+V3_MLX8 = "358b025b04001e50a065f8c87929175211264bd6182af74b67bd6caa2f639657"
+V3_MLX4 = "e1bc5538b8dced2a857b4980dba045c2ca01db1c369aa416fc19f0f5c593e782"
+V3_T = {"choice": 1.5, "noul": 0.2, "score": 1.0}
+
+
+def test_packaged_v3_map_is_the_fitted_file():
+    import hashlib
+    assert hashlib.sha256(TM.V3_FILE.read_bytes()).hexdigest() == TM.V3_SHA256
+    m = TM.default_v3()
+    assert m.schema == TM.SCHEMA_V2 and m.source == "default" and m.file == "temperature_map_v3.json"
+    assert m.temperatures == V3_T and m.model_sha256 == V3_BF16 and m.contract == "semif"
+    assert "TMAP-V15" in m.meta["fitted_on"] and m.meta["rule"]
+    assert set(TM.V3_BUILDS) == {V3_BF16, V3_MLX8, V3_MLX4}
+    assert TM.V3_BUILDS[V3_BF16]["note"] is None
+    assert TM.V3_BUILDS[V3_MLX8]["note"] == TM.V3_BUILDS[V3_MLX4]["note"] == TM.V3_MLX_NOTE
+    assert "applied to the MLX builds as-is" in TM.V3_MLX_NOTE and "never changed by a temperature" in TM.V3_MLX_NOTE
+
+
+def test_packaged_v3_map_is_shipped():
+    import tomllib
+    from pathlib import Path
+    data = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    assert "temperature_map_v3.json" in data["tool"]["setuptools"]["package-data"]["manchego_serve"]
+
+
+def test_default_applies_the_v3_map_to_the_v3_builds_under_semif():
+    for sha in (V3_BF16, V3_MLX8, V3_MLX4):
+        r = TM.resolve(DEFAULT, sha, contract="semif")
+        assert r.temperatures == V3_T and r.schema == TM.SCHEMA_V2 and r.source == "default" and r.sha256 == TM.V3_SHA256
+        d = r.describe()
+        assert d["model_sha256"] == V3_BF16 and d["contract"] == "semif" and d["file"] == "temperature_map_v3.json"
+        assert (TM.V3_MLX_NOTE in r.binding) is (sha != V3_BF16) and sha in r.binding
+    assert TM.resolve(DEFAULT, V3_BF16, contract="semif").binding.startswith("bound: model_sha256 is the loaded weights")
+
+
+def test_default_v3_map_needs_contract_semif():
+    for sha in (V3_BF16, V3_MLX8):
+        logs = []
+        r = TM.resolve(DEFAULT, sha, contract="auto", log=logs.append)
+        assert r.is_identity and "fitted under contract semif" in r.note and logs
+
+
+def test_default_under_semif_is_off_for_any_other_model():
+    for sha in (V21_HASHES + [V3_HASH, "0" * 64]):
+        r = TM.resolve(DEFAULT, sha, contract="semif", log=lambda m: None)
+        assert r.is_identity and r.source == "off"
+
+
+def test_default_v3_map_never_applies_unhashed():
+    logs = []
+    r = TM.resolve(DEFAULT, None, contract="semif", log=logs.append)
+    assert r.is_identity and "not hashed" in r.note and logs
+    for declared in ({"declared_repo": "oraculumai/Manchego"}, {"declared_revision": "2" * 40},
+                     {"declared_repo": "oraculumai/Manchego-MLX-8bit", "declared_revision": "1" * 40}):
+        assert TM.resolve(DEFAULT, None, contract="semif", log=lambda m: None, **declared).is_identity
+
+
+def test_explicit_v3_file_stays_bound_to_the_bf16_weights_only():
+    """Passed as a file, the schema-2 map binds by its own model_sha256 only: the MLX builds get it through the
+    default, never through the file."""
+    m = TM.load(str(TM.V3_FILE))
+    assert m.source == "file" and TM.resolve(m, V3_BF16, contract="semif").temperatures == V3_T
+    for sha in (V3_MLX8, V3_MLX4):
+        with pytest.raises(TM.TemperatureMapError, match="refusing"):
+            TM.resolve(m, sha, contract="semif")
+
+
+def test_a_damaged_packaged_v3_map_stops_the_start(tmp_path, monkeypatch):
+    bad = tmp_path / "temperature_map_v3.json"
+    bad.write_bytes(TM.V3_FILE.read_bytes().replace(b'"noul": 0.2', b'"noul": 0.3'))
+    monkeypatch.setattr(TM, "V3_FILE", bad)
+    with pytest.raises(TM.TemperatureMapError, match="not the published"):
+        TM.load("default")
+    assert TM.load("off") is TM.OFF
+
+
+def test_v3_map_in_a_response():
+    m = TM.resolve(DEFAULT, V3_MLX8, contract="semif")
+    out = Decider(FakeBackend(), temperature_map=m, contract="semif").handle({"state": STATE, "questions": {"c": CHOICE, "n": NOUL, "s": SCORE}})
+    mm = out["manchego"]
+    assert mm["temperature"] == V3_T and mm["temperature_by_question"] == {"c": 1.5, "n": 0.2, "s": 1.0}
+    assert mm["temperature_map"]["source"] == "default" and TM.V3_MLX_NOTE in mm["temperature_map"]["binding"]
+
+
+def test_v3_noul_temperature_and_the_abstention_band():
+    """README: under JevBench v1.5 a noul answer is an abstention (scored wrong) when 0.20 < P(yes) < 0.80. At T = 1 that
+    is every yes/no logit margin below ln 4 = 1.386; the v3 map's noul T = 0.2 narrows it to margins below 0.2 * ln 4 =
+    0.277. Sharpening never changes which side of 0.5 an answer is on."""
+    T = V3_T["noul"]
+    q, opts = {"type": "noul", "instructions": "x"}, [("true", None), ("false", None)]
+    lo, hi = T * math.log(4), math.log(4)
+    for margin in (lo + 0.01, 0.8, hi - 0.01):
+        assert 0.2 < C.answer(q, opts, [margin, 0.0], 1.0)["noul"] < 0.8
+        assert C.answer(q, opts, [margin, 0.0], T)["noul"] >= 0.8 and C.answer(q, opts, [0.0, margin], T)["noul"] <= 0.2
+    for margin in (0.0, 0.1, lo - 0.01):
+        assert 0.2 < C.answer(q, opts, [margin, 0.0], T)["noul"] < 0.8
+    rng = random.Random(5)
+    for _ in range(2000):
+        z = [rng.uniform(-6, 6), rng.uniform(-6, 6)]
+        assert (C.answer(q, opts, z, T)["noul"] > 0.5) == (C.answer(q, opts, z, 1.0)["noul"] > 0.5)

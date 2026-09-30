@@ -277,11 +277,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--no-hash", action="store_true", help="skip hashing the weight files at start-up")
     ap.add_argument("--no-warmup", action="store_true", help="skip the two warm-up requests at start-up")
     ap.add_argument("--temperature-map", default=os.environ.get("MANCHEGO_TEMPERATURE_MAP") or "default",
-                    help="one temperature per question type, applied to the option-code logits: 'default' (the map fitted "
-                         "for v2.1, shipped with the package; applied only to the v2.1 weights it lists, under contract auto: "
-                         "T = 1.0 for any other model), 'off' (T = 1.0 for every type, the v0.1.0 policy) or a JSON file "
-                         "(schema 2 is bound to one model's weights_sha256 and refused for any other). Default: "
-                         "$MANCHEGO_TEMPERATURE_MAP, else 'default'. It never changes the chosen option")
+                    help="one temperature per question type, applied to the option-code logits: 'default' (the maps shipped "
+                         "with the package, each applied only to the weights it is bound to by hash: Manchego v3's map to the "
+                         "v3 builds under contract semif, v2.1's map to the v2.1 builds it lists under contract auto; T = 1.0 "
+                         "for any other model), 'off' (T = 1.0 for every type, the v0.1.0 policy) or a JSON file (schema 2 is "
+                         "bound to one model's weights_sha256 and refused for any other). Default: $MANCHEGO_TEMPERATURE_MAP, "
+                         "else 'default'. It never changes the chosen option")
     ap.add_argument("--no-temperature-map", action="store_true", help="same as --temperature-map off")
     ap.add_argument("--gdn-kernels", choices=("reference", "fast"), default=os.environ.get("MANCHEGO_GDN_KERNELS") or None,
                     help="torch, CUDA: Qwen3.5's gated-delta-net layers. 'reference' (default): Transformers' PyTorch functions "

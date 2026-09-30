@@ -6,11 +6,16 @@ before the softmax, p = softmax(z / T[type]).
 A temperature never changes which option is chosen; it changes how spread out the probabilities are, and so `noul`,
 `confidence`, the `probabilities` and a score's expected level.
 
-  default   the map fitted for Manchego v2.1 on the project's own held-out development data. It ships with this package as
-            temperature_map_v2.1.json, and its SHA-256 is pinned below. It applies only to the published v2.1 builds
-            listed in the file, and only under contract "auto" (0.2.0): every other model gets T = 1.0.
+  default   the packaged maps, each applied only to the weights it is bound to by hash (`resolve`); every other model
+            gets T = 1.0:
+              * temperature_map_v3.json (0.2.0; schema 2, TMAP-V15): Manchego v3's serving map, fitted on the bf16 path's
+                development records. Applied to the v3 builds in V3_BUILDS (the bf16 weights it names, and the MLX 8-bit
+                and 4-bit builds, as-is), only under contract "semif".
+              * temperature_map_v2.1.json (0.1.2; schema 1): fitted for Manchego v2.1. Applied only to the published
+                v2.1 builds listed in the file, only under contract "auto".
+            Both files' SHA-256 are pinned below.
   off       T = 1.0 for every type: the v0.1.0 policy, byte for byte.
-  <path>    a JSON file: schema 1 (the default map's) or schema 2 (0.2.0).
+  <path>    a JSON file: schema 1 (the v2.1 map's) or schema 2 (0.2.0).
 
 Schema 2 ("manchego-temperature-map/2") is a typed map bound to ONE set of weights:
 
@@ -26,8 +31,8 @@ A schema-2 map is refused (the server does not start) when the loaded weights' S
 weights were not hashed (--no-hash), or when its `contract` is not the served one. It is never applied "as asked".
 
 The server's default (0.2.0, `resolve`): a map applies only to weights it is bound to by hash. With --no-hash the
-packaged v2.1 map applies only when a listed v2.1 build is declared (hub id or revision), as in 0.1.2; a bare
-directory with nothing declared gets T = 1.0.
+packaged v3 map never applies (its binding cannot be checked), and the packaged v2.1 map applies only when a listed
+v2.1 build is declared (hub id or revision), as in 0.1.2; a bare directory with nothing declared gets T = 1.0.
 
 Nothing here imports an ML library.
 """
@@ -48,6 +53,20 @@ SCHEMA_V2 = "manchego-temperature-map/2"
 SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 DEFAULT_FILE = Path(__file__).with_name("temperature_map_v2.1.json")
 DEFAULT_SHA256 = "2458d21771bbddc9c23ae0e63c880f2ebe5a6aa997e8c9de6b5e67b7210cd07e"
+V3_FILE = Path(__file__).with_name("temperature_map_v3.json")      # TMAP-V15, byte for byte as fitted
+V3_SHA256 = "56dae80c732674162ecb7ce9d091808e4fbf12fdd2c5beb90eb98176800d4426"
+V3_MLX_NOTE = ("fitted on the bf16 path's development records; applied to the MLX builds as-is; chosen options are never "
+               "changed by a temperature")
+# weights_sha256 (weights.identify) of the Manchego v3 builds the packaged v3 map applies to by default. The bf16 hash
+# is the file's own model_sha256; the MLX builds are bound here, by this package, with V3_MLX_NOTE.
+V3_BUILDS = {
+    "2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b": {
+        "build": "Manchego v3 bf16 Transformers (oraculumai/Manchego)", "note": None},
+    "358b025b04001e50a065f8c87929175211264bd6182af74b67bd6caa2f639657": {
+        "build": "Manchego v3 MLX 8-bit (oraculumai/Manchego-MLX-8bit)", "note": V3_MLX_NOTE},
+    "e1bc5538b8dced2a857b4980dba045c2ca01db1c369aa416fc19f0f5c593e782": {
+        "build": "Manchego v3 MLX 4-bit (oraculumai/Manchego-MLX-4bit)", "note": V3_MLX_NOTE},
+}
 OFF_SPECS = ("off", "none", "t1", "1", "1.0")
 T_MIN, T_MAX = 0.05, 20.0
 
@@ -117,18 +136,33 @@ def _temperatures(data: Any, where: str) -> dict:
     return out
 
 
+def _packaged(path: Path, pinned: str) -> tuple[str, dict]:
+    raw = path.read_bytes()
+    sha = hashlib.sha256(raw).hexdigest()
+    if sha != pinned:
+        raise TemperatureMapError(f"the packaged {path.name} has sha256 {sha}, not the published {pinned}; "
+                                  "reinstall the package, or pass --temperature-map off / a file explicitly")
+    return sha, json.loads(raw)
+
+
+def default_v3() -> TemperatureMap:
+    """The packaged Manchego v3 map (schema 2), not yet related to any weights (`resolve` does that)."""
+    sha, data = _packaged(V3_FILE, V3_SHA256)
+    return TemperatureMap(_temperatures(data, V3_FILE.name), "default", V3_FILE.name, sha, data, schema=SCHEMA_V2,
+                          **_v2_binding(data, V3_FILE.name))
+
+
 def load(spec: str | None = None) -> TemperatureMap:
-    """`default` (also when empty or None), `off`, or a path to a JSON map."""
+    """`default` (also when empty or None), `off`, or a path to a JSON map.
+
+    `default` returns the packaged v2.1 map, as in 0.1.2, after checking both packaged files; `resolve` replaces it with
+    the packaged v3 map for the weights that map is bound to."""
     s = (spec or "default").strip()
     if s.lower() in OFF_SPECS:
         return OFF
     if s.lower() == "default":
-        raw = DEFAULT_FILE.read_bytes()
-        sha = hashlib.sha256(raw).hexdigest()
-        if sha != DEFAULT_SHA256:
-            raise TemperatureMapError(f"the packaged {DEFAULT_FILE.name} has sha256 {sha}, not the published {DEFAULT_SHA256}; "
-                                      "reinstall the package, or pass --temperature-map off / a file explicitly")
-        data = json.loads(raw)
+        default_v3()                              # fail fast on a damaged package, whichever model is served
+        sha, data = _packaged(DEFAULT_FILE, DEFAULT_SHA256)
         return TemperatureMap(_temperatures(data, DEFAULT_FILE.name), "default", DEFAULT_FILE.name, sha, data)
     p = Path(s)
     if not p.is_file():
@@ -214,9 +248,11 @@ def _bind_v2(tmap: TemperatureMap, weights_sha256: str | None) -> TemperatureMap
 
 def resolve(tmap: TemperatureMap, weights_sha256: str | None, log: Callable[[str], None] = print,
             declared_repo: str | None = None, declared_revision: str | None = None, contract: str = "auto") -> TemperatureMap:
-    """The server's temperature for the loaded model (0.2.0): `bind`, plus two rules that make T = 1.0 the default for any
-    model the map is not bound to by hash.
+    """The server's temperature for the loaded model (0.2.0): `bind`, plus the rules that make T = 1.0 the default for any
+    model no map is bound to by hash.
 
+      * The packaged v3 map applies to the v3 builds in V3_BUILDS (by weights_sha256), under contract "semif" only. It is
+        never applied to unhashed weights (--no-hash): its binding cannot be checked.
       * The packaged v2.1 map was fitted under contract "auto"; under any other contract it is not applied (T = 1.0).
       * With --no-hash and nothing declared (a bare directory, no hub id, no revision) the packaged map is not applied
         (T = 1.0): the weights could be any model. 0.1.2 kept it, reported as not checked.
@@ -226,6 +262,14 @@ def resolve(tmap: TemperatureMap, weights_sha256: str | None, log: Callable[[str
     """
     if tmap.source == "off":
         return tmap
+    if tmap.source == "default" and tmap.schema == SCHEMA:
+        if weights_sha256 in V3_BUILDS:
+            return _default_v3(weights_sha256, contract, log)
+        if weights_sha256 is None and contract == "semif":
+            why = ("the weights were not hashed (--no-hash), so no packaged map can be bound to them (the v3 map applies only "
+                   "to the v3 builds' weights_sha256): T = 1.0 for every type")
+            log(f"warning: {why}")
+            return replace(OFF, note=why)
     if tmap.schema == SCHEMA_V2:
         if tmap.contract is not None and tmap.contract != contract:
             raise TemperatureMapError(f"temperature map {tmap.file} was fitted under contract {tmap.contract!r}; this server "
@@ -242,3 +286,17 @@ def resolve(tmap: TemperatureMap, weights_sha256: str | None, log: Callable[[str
         log(f"warning: {why}")
         return replace(OFF, note=why)
     return bind(tmap, weights_sha256, log=log, declared_repo=declared_repo, declared_revision=declared_revision)
+
+
+def _default_v3(weights_sha256: str, contract: str, log: Callable[[str], None]) -> TemperatureMap:
+    """The packaged v3 map for one of the v3 builds, under contract semif; T = 1.0 under any other contract."""
+    v3 = default_v3()
+    if contract != v3.contract:
+        why = (f"the default map for these weights ({v3.meta.get('model')}) was fitted under contract {v3.contract}; this "
+               f"server serves contract {contract!r}, so T = 1.0 for every type")
+        log(f"warning: {why}")
+        return replace(OFF, note=why)
+    b = V3_BUILDS[weights_sha256]
+    if weights_sha256 == v3.model_sha256:
+        return replace(v3, binding=f"bound: model_sha256 is the loaded weights ({weights_sha256}), {b['build']}")
+    return replace(v3, binding=f"bound by manchego-serve to {b['build']} (weights_sha256 {weights_sha256}): {b['note']}")

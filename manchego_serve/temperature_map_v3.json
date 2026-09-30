@@ -1,0 +1,15 @@
+{
+ "schema": "manchego-temperature-map/2",
+ "model": "Manchego v3 candidate v3m100b (release candidate rc1)",
+ "model_sha256": "2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b",
+ "contract": "semif",
+ "temperatures": {
+  "choice": 1.5,
+  "noul": 0.2,
+  "score": 1.0
+ },
+ "how_applied": "p = softmax(option-code logits / T[question type]); the chosen option is the largest logit, so no temperature changes it",
+ "fitted_on": "TMAP-V15 (research repository amendment A-V4-20, registered in commit 08c67a5 before the fit; results commit a18545d): v3m100b's SemIf records on 28,182 development rows the model never trained on (choice 10,485, noul 16,050, score 1,647); no benchmark item",
+ "rule": "per type, the temperature from the grid 0.2..2.0 that maximises the estimated JevBench v1.5 composite (headline A: noul answers with 0.20 < P(yes) < 0.80 count as wrong; typed calibration; equal types); ties to the temperature closest to 1",
+ "fit_sha256": "065b2ea824ac9cbcaff9ca0c1690fb98168e81568ca21ecd0b0e9a9798a1c9e2"
+}

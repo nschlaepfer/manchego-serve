@@ -169,3 +169,20 @@ def test_build_names_the_serving_field_when_the_fast_path_fails(tiny_folder, mon
         build(tiny_folder, logs)
     assert any("--no-cuda-graphs" in m for m in logs)
     (tiny_folder / "manchego_config.json").unlink()
+
+
+def test_build_applies_the_packaged_v3_map_by_hash_only(tiny_folder, monkeypatch):
+    """The default map for v3 reaches the server by weights_sha256 (the tiny model's hash stands in for a v3 build) and
+    contract semif; off, another contract or unhashed weights give T = 1.0."""
+    from manchego_serve.weights import identify
+    (tiny_folder / "manchego_config.json").write_text(json.dumps({"contract": "semif"}))
+    assert build(tiny_folder, []).tmap.is_identity                           # not a v3 build
+    sha = identify(str(tiny_folder))["weights_sha256"]
+    monkeypatch.setitem(TM.V3_BUILDS, sha, {"build": "tiny (standing in for a v3 MLX build)", "note": TM.V3_MLX_NOTE})
+    d = build(tiny_folder, [])
+    assert d.tmap.temperatures == {"choice": 1.5, "noul": 0.2, "score": 1.0} and TM.V3_MLX_NOTE in d.tmap.binding
+    assert d.handle(BODY)["manchego"]["temperature_by_question"] == {"n": 0.2, "c": 1.5}
+    assert build(tiny_folder, [], temperature_map="off").tmap.is_identity
+    assert "contract semif" in build(tiny_folder, [], contract="auto").tmap.note
+    assert "not hashed" in build(tiny_folder, [], hash_weights=False).tmap.note
+    (tiny_folder / "manchego_config.json").unlink()
