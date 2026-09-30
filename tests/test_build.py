@@ -186,3 +186,13 @@ def test_build_applies_the_packaged_v3_map_by_hash_only(tiny_folder, monkeypatch
     assert "contract semif" in build(tiny_folder, [], contract="auto").tmap.note
     assert "not hashed" in build(tiny_folder, [], hash_weights=False).tmap.note
     (tiny_folder / "manchego_config.json").unlink()
+
+
+def test_build_reads_a_version_name_as_the_pinned_commit(tiny_folder):
+    """The Docker image declares its folder with MANCHEGO_REVISION=v2.1 or v3 (a version name for the pinned commit)."""
+    from manchego_serve.server import build as server_build
+    from manchego_serve.weights import PINS, RevisionError
+    d = server_build("torch", str(tiny_folder), "v2.1", dtype="float32", device="cpu", log=lambda m: None)
+    assert d.info["revision"] == PINS["oraculumai/Manchego"]["revision"] and d.info["weights_verified"] is False
+    with pytest.raises(RevisionError, match="placeholder"):                  # until V3_REVISION is filled in
+        server_build("torch", str(tiny_folder), "v3", dtype="float32", device="cpu", log=lambda m: None)

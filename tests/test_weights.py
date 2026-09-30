@@ -1,6 +1,7 @@
 """Pins, weight identification, the download check and offline mode. No network, no weights."""
 import hashlib
 import os
+from pathlib import Path
 
 import pytest
 
@@ -89,3 +90,142 @@ def test_server_forces_offline(monkeypatch):
         monkeypatch.setenv(k, "0")
     force_offline()
     assert os.environ["HF_HUB_OFFLINE"] == "1" and os.environ["HF_HUB_DISABLE_TELEMETRY"] == "1"
+
+
+# ------------------------------------------------------------------ Manchego v3 pins (0.2.0)
+V3_DIGESTS = {  # weights_sha256 of the v3 release builds (the temperature map's bindings, temperature.V3_BUILDS)
+    "oraculumai/Manchego": "2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b",
+    "oraculumai/Manchego-MLX-8bit": "358b025b04001e50a065f8c87929175211264bd6182af74b67bd6caa2f639657",
+    "oraculumai/Manchego-MLX-4bit": "e1bc5538b8dced2a857b4980dba045c2ca01db1c369aa416fc19f0f5c593e782",
+}
+V3_REVISIONS = {"oraculumai/Manchego": "3" * 40, "oraculumai/Manchego-MLX-8bit": "4" * 40, "oraculumai/Manchego-MLX-4bit": "5" * 40}
+
+
+def digest(files):
+    return hashlib.sha256("".join(f"{files[n]}  {n}\n" for n in sorted(files)).encode()).hexdigest()
+
+
+def pin_v3(monkeypatch, repos=tuple(V3_REVISIONS)):
+    """As after the upload: the v3 revisions filled in."""
+    for repo in repos:
+        monkeypatch.setitem(weights.V3_PINS[repo], "revision", V3_REVISIONS[repo])
+
+
+def test_v3_pins_are_the_release_builds():
+    from manchego_serve import temperature as TM
+    assert weights.RELEASES == {"v3": weights.V3_PINS, "v2.1": PINS} and weights.VERSIONS == ("v3", "v2.1")
+    for repo, pin in weights.V3_PINS.items():
+        assert pin["tag"] == "v3" and pin["backend"] == PINS[repo]["backend"] and pin["format"] == PINS[repo]["format"]
+        assert digest(pin["files"]) == V3_DIGESTS[repo] and all(len(h) == 64 for h in pin["files"].values())
+        assert pin["support"] == PINS[repo]["support"]                     # v3 ships v2.1's tokenizer, template and configs
+    assert weights.BF16_SUPPORT == PINS["oraculumai/Manchego"]["support"]
+    assert set(V3_DIGESTS.values()) == set(TM.V3_BUILDS)
+    assert TM.default_v3().model_sha256 == V3_DIGESTS["oraculumai/Manchego"]
+
+
+def test_v3_revisions_are_placeholders_until_the_upload():
+    """REVISION_V3 and friends are filled in after the Hub upload. Until then v3 is not a published revision: downloads and
+    the server default to v2.1, and v3 bytes match no pin."""
+    assert (weights.V3_REVISION, weights.V3_MLX8_REVISION, weights.V3_MLX4_REVISION) == (
+        "REVISION_V3", "MLX8_REVISION_V3", "MLX4_REVISION_V3")
+    assert [v for v, _, _ in weights.published_pins()] == ["v2.1"] * 3
+    for repo in V3_DIGESTS:
+        assert weights.default_version(repo) == "v2.1" and weights.pinned_revision(repo) == PINS[repo]["revision"]
+        with pytest.raises(weights.RevisionError, match="placeholder"):
+            weights.pinned_revision(repo, "v3")
+    assert weights.default_version("someone/else") is None
+
+
+def test_version_names_are_pinned_commits(monkeypatch, tmp_path):
+    repo = "oraculumai/Manchego"
+    assert weights.named_revision(repo, "v2.1") == PINS[repo]["revision"] and weights.named_revision(repo, "a" * 40) == "a" * 40
+    assert weights.resolve(str(tmp_path), "v2.1", default_repo=repo) == (str(tmp_path.resolve()), PINS[repo]["revision"])
+    assert weights.resolve(str(tmp_path), "v2.1") == (str(tmp_path.resolve()), "v2.1")      # no repository to read it for
+    with pytest.raises(weights.RevisionError):
+        weights.resolve(str(tmp_path), "v3", default_repo=repo)
+    with pytest.raises(weights.RevisionError, match="not a Manchego version"):
+        weights.pinned_revision("someone/else", "v2.1")
+    pin_v3(monkeypatch)
+    assert weights.default_version(repo) == "v3" and weights.pinned_revision(repo) == V3_REVISIONS[repo]
+    assert weights.resolve(str(tmp_path), "v3", default_repo=repo)[1] == V3_REVISIONS[repo]
+    assert weights.pinned_revision(repo, "v2.1") == PINS[repo]["revision"]                  # v2.1 stays available by name
+
+
+def _bytes_of(pin):
+    def f(p):
+        if open(p, "rb").read() == b"tampered":
+            return hashlib.sha256(b"tampered").hexdigest()
+        return {**pin["files"], **pin["support"]}[os.path.basename(p)]
+    return f
+
+
+def _folder(tmp_path, pin):
+    for n in list(pin["files"]) + list(weights.SUPPORT_FILES):
+        (tmp_path / n).write_bytes(b"x")
+    return tmp_path
+
+
+def test_identify_v3_bytes(tmp_path, monkeypatch):
+    repo = "oraculumai/Manchego"
+    pin = weights.V3_PINS[repo]
+    _folder(tmp_path, pin)
+    monkeypatch.setattr(weights, "sha256_file", _bytes_of(pin))
+    ident = identify(str(tmp_path))
+    assert ident["weights_sha256"] == V3_DIGESTS[repo] and ident["weights_match_pin"] is None       # not published yet
+    pin_v3(monkeypatch)
+    ident = identify(str(tmp_path))
+    assert ident["weights_match_pin"] == {"repo": repo, "revision": V3_REVISIONS[repo], "tag": "v3"}
+    assert ident["support_files_match_pin"]
+
+
+def _download(monkeypatch, tmp_path, pin, capsys=None):
+    import huggingface_hub
+    asked = {}
+
+    def snapshot(repo, revision=None, local_dir=None):
+        asked.update(repo=repo, revision=revision)
+        return str(tmp_path)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot)
+    monkeypatch.setattr(weights, "sha256_file", _bytes_of(pin))
+    return asked
+
+
+def test_download_default_is_v21_until_v3_is_pinned(tmp_path, monkeypatch, capsys):
+    repo = "oraculumai/Manchego"
+    asked = _download(monkeypatch, _folder(tmp_path, PINS[repo]), PINS[repo])
+    assert download.main([]) == 0 and asked == {"repo": repo, "revision": PINS[repo]["revision"]}
+    out, err = capsys.readouterr()
+    assert "not pinned in this build yet" in err and '"version": "v2.1"' in out
+    assert download.main(["--revision", "v2.1"]) == 0 and asked["revision"] == PINS[repo]["revision"]
+    with pytest.raises(SystemExit):
+        download.main(["--revision", "v3"])
+    assert "placeholder" in capsys.readouterr().err
+
+
+def test_download_fetches_v3_once_pinned(tmp_path, monkeypatch, capsys):
+    repo = "oraculumai/Manchego"
+    pin_v3(monkeypatch)
+    pin = weights.V3_PINS[repo]
+    asked = _download(monkeypatch, _folder(tmp_path, pin), pin)
+    assert download.main([]) == 0 and asked["revision"] == V3_REVISIONS[repo]
+    assert '"version": "v3"' in capsys.readouterr().out
+    (tmp_path / "model.safetensors-00002-of-00002.safetensors").write_bytes(b"tampered")
+    assert download.main(["--revision", "v3"]) == 1
+    (tmp_path / "model.safetensors-00002-of-00002.safetensors").write_bytes(b"x")
+    monkeypatch.setattr(weights, "sha256_file", _bytes_of(PINS[repo]))       # v2.1 bytes where v3 was asked
+    for n in PINS[repo]["files"]:
+        (tmp_path / n).write_bytes(b"x")
+    assert download.main(["--revision", "v3"]) == 1
+    asked = _download(monkeypatch, tmp_path, PINS[repo])
+    assert download.main(["--revision", "v2.1"]) == 0 and asked["revision"] == PINS[repo]["revision"]
+
+
+def test_dockerfile_default_follows_the_pins():
+    """The image's MANCHEGO_VERSION default is the default version of oraculumai/Manchego: v2.1 while V3_REVISION is a
+    placeholder, v3 once it is filled in (this test fails until the Dockerfile follows)."""
+    import re
+    text = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+    default = re.search(r"^ARG MANCHEGO_VERSION=(\S+)$", text, re.M).group(1)
+    assert default == weights.default_version("oraculumai/Manchego")
+    assert re.search(r"^ARG MODEL_REVISION=$", text, re.M)
+    assert text.count("${MODEL_REVISION:-${MANCHEGO_VERSION}}") == 2        # the download and the run-time declaration

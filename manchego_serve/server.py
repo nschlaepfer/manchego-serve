@@ -185,7 +185,7 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
     from .backends import load_backend
     from .weights import DEFAULT_REPO, resolve, identify
     model = model or DEFAULT_REPO[backend]
-    model_dir, revision = resolve(model, revision)
+    model_dir, revision = resolve(model, revision, default_repo=DEFAULT_REPO[backend])
     cfg = MC.read(model_dir)            # fail fast on a bad manchego_config.json, before the weights are read
     from_cli = contract not in (None, "", "model")
     policy = contract if from_cli else cfg.contract
@@ -221,7 +221,8 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
         info.update(weights_sha256=ident["weights_sha256"], weights_verified=verified, weight_files=ident["files"],
                     support_files_verified=verified and ident["support_files_match_pin"], support_files=ident["support_files"])
         log(f"weights: sha256 {ident['weights_sha256']} ({time.perf_counter() - t0:.1f} s); "
-            + (f"these are the published bytes of {pin['repo']}@{pin['revision']} ({pin['tag']})" if pin else "NOT the bytes of any published v2.1 revision"))
+            + (f"these are the published bytes of {pin['repo']}@{pin['revision']} ({pin['tag']})" if pin
+               else "NOT the bytes of any revision this package pins"))
         if pin and not verified:
             log(f"warning: declared {info['repo']}@{info['revision']}, but the bytes are {pin['repo']}@{pin['revision']}")
         if pin and not ident["support_files_match_pin"]:
@@ -256,12 +257,14 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(prog="manchego-serve", description="Serve Manchego v2.1 on the System One wire contract, offline.")
+    ap = argparse.ArgumentParser(prog="manchego-serve", description="Serve Manchego (v3 or v2.1) on the System One wire contract, offline.")
     ap.add_argument("--backend", choices=("torch", "mlx"), default=os.environ.get("MANCHEGO_BACKEND", "torch"))
     ap.add_argument("--model", default=os.environ.get("MANCHEGO_MODEL"), help="weights directory, or a hub id already in the "
                     "local cache (default: $MANCHEGO_MODEL, else oraculumai/Manchego for torch, oraculumai/Manchego-MLX-8bit for mlx)")
-    ap.add_argument("--revision", default=os.environ.get("MANCHEGO_REVISION"),
-                    help="full commit sha of --model (default: $MANCHEGO_REVISION, else the pinned v2.1 revision)")
+    ap.add_argument("--revision", default=os.environ.get("MANCHEGO_REVISION") or None,
+                    help="full commit sha of --model, or a version name (v3, v2.1) for the commit this package pins; for a "
+                         "folder, the name is read for the backend's default repository. Default: $MANCHEGO_REVISION, else "
+                         "the newest pinned version (v3 once its revision is pinned, else v2.1)")
     ap.add_argument("--host", default=os.environ.get("MANCHEGO_HOST", "127.0.0.1"), help="default: $MANCHEGO_HOST, else 127.0.0.1")
     ap.add_argument("--port", type=int, default=int(os.environ.get("MANCHEGO_PORT", "8000")), help="default: $MANCHEGO_PORT, else 8000")
     ap.add_argument("--execution", choices=EXECUTIONS, default="sequential",

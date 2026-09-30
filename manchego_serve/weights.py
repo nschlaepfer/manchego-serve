@@ -2,21 +2,46 @@
 # SPDX-License-Identifier: Apache-2.0
 """Where the weights are, and proof that they are the published bytes.
 
-The pinned revisions below are the public Manchego v2.1 repositories on the Hugging Face Hub (tag `v2.1` in each). The
-SHA-256 of every weight file is the Hub's own LFS object id for that file at that revision. The support files that shape
-the prompt and the model (chat template, tokenizer, configs) are pinned too: their SHA-256 were computed from copies whose
-git blob ids (or LFS ids) equal the Hub's at that revision. At start-up the server hashes the files it loads and reports
-whether they match a pin. Nothing here opens a network connection: resolving a hub id reads the local cache only
-(`manchego-serve-download` fills it once, at setup time).
+Two Manchego versions are pinned, each in three repositories on the Hugging Face Hub (bf16 Transformers, MLX 8-bit,
+MLX 4-bit):
+
+  v2.1  tag `v2.1`. The SHA-256 of every weight file is the Hub's own LFS object id for that file at that revision; the
+        support files that shape the prompt and the model (chat template, tokenizer, configs) were hashed from copies
+        whose git blob ids (or LFS ids) equal the Hub's at that revision.
+  v3    the default once its revisions are pinned. Every SHA-256 was computed from the release builds that are uploaded
+        (2026-09-30). The revisions (V3_REVISION, V3_MLX8_REVISION, V3_MLX4_REVISION) are PLACEHOLDERS until the Hub
+        upload: until each is a full commit sha, v3 is not a published revision here, downloads and the server default
+        to v2.1, and v3 weights are reported as matching no pin.
+
+A version name (`v3`, `v2.1`) may stand for a revision: it means the commit this package pins, never the Hub's tag of
+that name. At start-up the server hashes the files it loads and reports whether they match a pinned revision. Nothing
+here opens a network connection: resolving a hub id reads the local cache only (`manchego-serve-download` fills it
+once, at setup time).
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 
-PINS = {
+# Manchego v3's commits on the Hub. PLACEHOLDERS: each is replaced by the full 40-character sha of the commit that holds
+# the v3 files, after the upload (the release plan's commit A), and before this package is tagged.
+V3_REVISION = "REVISION_V3"              # PLACEHOLDER: oraculumai/Manchego
+V3_MLX8_REVISION = "MLX8_REVISION_V3"    # PLACEHOLDER: oraculumai/Manchego-MLX-8bit
+V3_MLX4_REVISION = "MLX4_REVISION_V3"    # PLACEHOLDER: oraculumai/Manchego-MLX-4bit
+
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+BF16_SUPPORT = {   # identical in v2.1 and v3
+    "chat_template.jinja": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+    "config.json": "ddc63e1c717afa86c865bb5e01313d89d72bb53b97ad4a8a03ba8510c0621670",
+    "model.safetensors.index.json": "cf3f798ee02ba45f9622aa8892a47369ab667d0afbf154ee7c2212de42e6302d",
+    "tokenizer.json": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+    "tokenizer_config.json": "316230d6a809701f4db5ea8f8fc862bc3a6f3229c937c174e674ff3ca0a64ac8",
+}
+
+PINS = {   # Manchego v2.1 (the name 0.1.x used for them)
     "oraculumai/Manchego": {
         "revision": "77403228b7dfdf823af99a5f562bdcf80b708d4c", "tag": "v2.1", "format": "bf16 Transformers", "backend": "torch",
         "files": {
@@ -54,6 +79,29 @@ PINS = {
         },
     },
 }
+V21_PINS = PINS
+V3_PINS = {
+    "oraculumai/Manchego": {
+        "revision": V3_REVISION, "tag": "v3", "format": "bf16 Transformers", "backend": "torch",
+        "files": {
+            "model.safetensors-00001-of-00002.safetensors": "036f8c81ba3436f89da99dd149e04b4640c7560df3126a9c31668e30db86b89d",
+            "model.safetensors-00002-of-00002.safetensors": "44fb326ecba28d864b762d5b70cd08746f7d5b07fade1e92885b7c2600428af6",
+        },
+        "support": dict(BF16_SUPPORT),
+    },
+    "oraculumai/Manchego-MLX-8bit": {
+        "revision": V3_MLX8_REVISION, "tag": "v3", "format": "MLX 8-bit", "backend": "mlx",
+        "files": {"model.safetensors": "02546297da8c59e9545d1600cb25ce5b6f3237104a19f9dd9674b961a9248e85"},
+        "support": dict(PINS["oraculumai/Manchego-MLX-8bit"]["support"]),        # identical to v2.1's
+    },
+    "oraculumai/Manchego-MLX-4bit": {
+        "revision": V3_MLX4_REVISION, "tag": "v3", "format": "MLX 4-bit", "backend": "mlx",
+        "files": {"model.safetensors": "a6e8ea1e4d549ac951252d20684ff12884cd2d7b0c417aaabc6acffca98428be"},
+        "support": dict(PINS["oraculumai/Manchego-MLX-4bit"]["support"]),        # identical to v2.1's
+    },
+}
+RELEASES = {"v3": V3_PINS, "v2.1": V21_PINS}          # newest first
+VERSIONS = tuple(RELEASES)
 DEFAULT_REPO = {"torch": "oraculumai/Manchego", "mlx": "oraculumai/Manchego-MLX-8bit"}
 
 
@@ -61,12 +109,61 @@ class WeightsNotFound(RuntimeError):
     pass
 
 
-def resolve(model: str, revision: str | None) -> tuple[str, str | None]:
-    """(local directory, revision). A directory is used as is. A hub id is looked up in the local cache ONLY."""
+class RevisionError(ValueError):
+    """A version name this package cannot turn into a pinned commit."""
+
+
+def is_pinned(revision: str | None) -> bool:
+    """A full commit sha (a placeholder is not)."""
+    return bool(revision) and bool(FULL_SHA.fullmatch(revision))
+
+
+def published_pins():
+    """(version, repo, pin) for every pin whose revision is a full commit sha, newest version first."""
+    return [(v, repo, pin) for v, pins in RELEASES.items() for repo, pin in pins.items() if is_pinned(pin["revision"])]
+
+
+def default_version(repo: str) -> str | None:
+    """The newest version this package pins a revision of `repo` for (v3 once its revision is filled in, else v2.1)."""
+    return next((v for v, r, _ in published_pins() if r == repo), None)
+
+
+def pin_for(repo: str, revision: str | None) -> tuple[str, dict] | tuple[None, None]:
+    """(version, pin) when `revision` is a pinned revision of `repo`."""
+    return next(((v, pin) for v, r, pin in published_pins() if r == repo and pin["revision"] == revision), (None, None))
+
+
+def pinned_revision(repo: str, version: str | None = None) -> str:
+    """The commit this package pins for `repo` at `version` (None: the default version)."""
+    if version is None:
+        version = default_version(repo)
+        if version is None:
+            raise RevisionError(f"this package pins no revision of {repo}; pass a full commit sha")
+    pin = RELEASES.get(version, {}).get(repo)
+    if pin is None:
+        raise RevisionError(f"{version!r} is not a Manchego version this package pins for {repo} "
+                            f"(known: {', '.join(v for v in VERSIONS if repo in RELEASES[v]) or 'none'})")
+    if not is_pinned(pin["revision"]):
+        raise RevisionError(f"Manchego {version}'s revision of {repo} is not pinned in this build of manchego-serve yet "
+                            f"(weights.py holds the placeholder {pin['revision']!r}, filled after the Hub upload); pass the "
+                            f"full commit sha, or v2.1")
+    return pin["revision"]
+
+
+def named_revision(repo: str, revision: str | None) -> str | None:
+    """A version name (v3, v2.1) as the commit this package pins for `repo`; anything else unchanged."""
+    return pinned_revision(repo, revision) if revision in RELEASES else revision
+
+
+def resolve(model: str, revision: str | None, default_repo: str | None = None) -> tuple[str, str | None]:
+    """(local directory, revision). A directory is used as is (a version name as `revision` is read for `default_repo`).
+    A hub id is looked up in the local cache ONLY, at `revision` (a sha or a version name; None: the default version's
+    pinned commit)."""
     if Path(model).is_dir():
-        return str(Path(model).resolve()), revision
-    if revision is None and model in PINS:
-        revision = PINS[model]["revision"]
+        return str(Path(model).resolve()), named_revision(default_repo, revision) if default_repo else revision
+    revision = named_revision(model, revision or None)
+    if revision is None and any(model in pins for pins in RELEASES.values()):
+        revision = pinned_revision(model)
     from huggingface_hub import snapshot_download
     try:
         path = snapshot_download(model, revision=revision, local_files_only=True)
@@ -98,12 +195,14 @@ SUPPORT_FILES = ("chat_template.jinja", "config.json", "model.safetensors.index.
 
 
 def identify(model_dir: str) -> dict:
-    """SHA-256 of every weight file, a combined digest, and the pin they match (if any); SHA-256 of the support files
-    (None when absent) and whether they are the pinned ones of that same revision."""
+    """SHA-256 of every weight file, a combined digest, and the pinned revision they match (if any: a v3 build matches
+    none until its revision is pinned); SHA-256 of the support files (None when absent) and whether they are the pinned
+    ones of that same revision."""
     files = {p.name: sha256_file(p) for p in weight_files(model_dir)}
     combined = hashlib.sha256("".join(f"{files[n]}  {n}\n" for n in sorted(files)).encode()).hexdigest()
-    match = next(({"repo": repo, "revision": pin["revision"], "tag": pin["tag"]} for repo, pin in PINS.items() if pin["files"] == files), None)
+    found = next(((repo, pin) for _, repo, pin in published_pins() if pin["files"] == files), None)
+    match = {"repo": found[0], "revision": found[1]["revision"], "tag": found[1]["tag"]} if found else None
     support = {n: (sha256_file(Path(model_dir) / n) if (Path(model_dir) / n).is_file() else None) for n in SUPPORT_FILES}
-    support_ok = bool(match) and all(support.get(n) == h for n, h in PINS[match["repo"]]["support"].items())
+    support_ok = bool(found) and all(support.get(n) == h for n, h in found[1]["support"].items())
     return {"files": files, "weights_sha256": combined, "weights_match_pin": match, "support_files": support,
             "support_files_match_pin": support_ok}
