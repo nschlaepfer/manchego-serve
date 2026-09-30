@@ -2,14 +2,23 @@
 # SPDX-License-Identifier: Apache-2.0
 """PyTorch + Transformers backend: bfloat16 on CUDA, float32 on CPU (overridable).
 
-With the fast path off (the default) this is the 0.1.x backend: `logits_batch` below is its code, unchanged. The opt-in
-fast path (fast_path.py: gated-delta-net kernels, CUDA graphs, the lean one-prompt path) only ever replaces one-prompt
-calls and the kernel functions; padded batches always run the reference code.
+With the fast path off this is the 0.1.x backend: `logits_batch` below is its code, unchanged. The fast path
+(fast_path.py: gated-delta-net kernels, CUDA graphs, the lean one-prompt path; on when asked, or by the model folder's
+serving defaults on CUDA) only ever replaces one-prompt calls and the kernel functions; padded batches always run the
+reference code.
 """
 
 from __future__ import annotations
 
 from .fast_path import FastPathConfig, FastPathError, GraphBuckets, SinglePath, select_gdn_kernels
+
+
+def resolve_device(device: str = "auto") -> str:
+    """`auto`: the first CUDA device when there is one, else the CPU."""
+    if device != "auto":
+        return device
+    import torch
+    return "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class TorchBackend:
@@ -18,8 +27,7 @@ class TorchBackend:
     def __init__(self, model_dir: str, dtype: str = "auto", device: str = "auto", fast: FastPathConfig | None = None):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        if device == "auto":
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        device = resolve_device(device)
         if dtype == "auto":
             dtype = "bfloat16" if device.startswith("cuda") else "float32"
         if dtype not in ("bfloat16", "float32", "float16"):

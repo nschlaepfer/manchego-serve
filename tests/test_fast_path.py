@@ -60,6 +60,120 @@ def test_command_line(monkeypatch):
     assert not fast_config(parse_args([])).cuda_graphs
 
 
+# ------------------------------------------------------------------ serving defaults from manchego_config.json (no torch)
+V3_SERVING = {"cuda_graphs": True, "fast_host": True}
+
+
+def test_settle_nothing_declared_nothing_asked_is_the_reference():
+    """The v2.1 case: no `serving` field, no flag. Off, and the report says nothing about model defaults."""
+    for backend, device in (("torch", "cuda:0"), ("torch", "cpu"), ("mlx", None)):
+        cfg, rep = FP.settle(FP.FastPathRequest(), None, backend, device)
+        assert cfg == FP.FastPathConfig() and cfg.is_off
+        assert set(rep) == {"in_force", "source"} and set(rep["source"].values()) == {FP.DEFAULT}
+
+
+def test_settle_applies_the_model_defaults_on_cuda_only():
+    cfg, rep = FP.settle(FP.FastPathRequest(), V3_SERVING, "torch", "cuda:0")
+    assert (cfg.gdn_kernels, cfg.cuda_graphs, cfg.graph_buckets, cfg.fast_host) == ("reference", True, FP.DEFAULT_BUCKETS, True)
+    assert rep["source"] == {"gdn_kernels": FP.DEFAULT, "cuda_graphs": FP.MODEL, "graph_buckets": FP.DEFAULT, "fast_host": FP.MODEL}
+    assert rep["model_defaults"] == V3_SERVING and rep["model_defaults_applied"] == ["cuda_graphs", "fast_host"] and "note" not in rep
+    for backend, device in (("torch", "cpu"), ("torch", "mps"), ("mlx", None)):
+        cfg, rep = FP.settle(FP.FastPathRequest(), V3_SERVING, backend, device)
+        assert cfg.is_off and rep["model_defaults_applied"] == [] and "apply only to the torch backend on CUDA" in rep["note"]
+
+
+def test_settle_flags_override_the_model_defaults():
+    cfg, rep = FP.settle(FP.FastPathRequest(cuda_graphs=False), V3_SERVING, "torch", "cuda:1")
+    assert not cfg.cuda_graphs and cfg.fast_host and rep["source"]["cuda_graphs"] == FP.ASKED
+    cfg, _ = FP.settle(FP.FastPathRequest(fast_host=False), V3_SERVING, "torch", "cuda:0")
+    assert cfg.cuda_graphs and not cfg.fast_host
+    cfg, rep = FP.settle(FP.FastPathRequest("reference", False, None, False), V3_SERVING, "torch", "cuda:0")
+    assert cfg.is_off and rep["model_defaults_applied"] == [] and "note" not in rep
+    cfg, _ = FP.settle(FP.FastPathRequest(gdn_kernels="fast"), V3_SERVING, "torch", "cuda:0")
+    assert cfg.gdn_kernels == "fast" and cfg.cuda_graphs and cfg.fast_host
+    cfg, _ = FP.settle(FP.FastPathRequest(fast_host=True), V3_SERVING, "torch", "cpu")        # asked: honoured anywhere
+    assert cfg.fast_host and not cfg.cuda_graphs
+
+
+def test_settle_graph_buckets():
+    serving = {**V3_SERVING, "graph_buckets": [1024, 128]}
+    cfg, rep = FP.settle(FP.FastPathRequest(), serving, "torch", "cuda:0")
+    assert cfg.graph_buckets == (128, 1024) and rep["source"]["graph_buckets"] == FP.MODEL
+    cfg, rep = FP.settle(FP.FastPathRequest(graph_buckets=(512,)), serving, "torch", "cuda:0")
+    assert cfg.graph_buckets == (512,) and rep["source"]["graph_buckets"] == FP.ASKED
+
+
+def test_kernels_are_never_a_model_default():
+    from manchego_serve import model_config as MC
+    assert "gdn_kernels" not in MC.SERVING_KEYS
+    cfg, _ = FP.settle(FP.FastPathRequest(), {"gdn_kernels": "fast", **V3_SERVING}, "torch", "cuda:0")   # settle ignores it too
+    assert cfg.gdn_kernels == "reference"
+
+
+def _config(tmp_path, data):
+    from manchego_serve import model_config as MC
+    (tmp_path / MC.FILE).write_text(data if isinstance(data, str) else json.dumps(data))
+    return MC.read(tmp_path)
+
+
+def test_model_config_serving(tmp_path):
+    none = _config(tmp_path, {"model": "Manchego", "version": "v2.1"})
+    assert none.serving is None and "serving" not in none.describe()
+    v3 = _config(tmp_path, {"contract": "semif", "serving": V3_SERVING})
+    assert v3.serving == V3_SERVING and v3.describe()["serving"] == V3_SERVING
+    b = _config(tmp_path, {"serving": {"cuda_graphs": True, "graph_buckets": [256, 2048]}})
+    assert b.serving == {"cuda_graphs": True, "graph_buckets": [256, 2048]}
+    assert _config(tmp_path, {"serving": {}}).serving == {}
+
+
+@pytest.mark.parametrize("serving", [True, [], "on", {"cuda_graphs": 1}, {"fast_host": "true"}, {"gdn_kernels": "fast"},
+                                     {"cuda_graph": True}, {"graph_buckets": []}, {"graph_buckets": [256, 256]},
+                                     {"graph_buckets": [0]}, {"graph_buckets": [256.0]}, {"graph_buckets": [True]},
+                                     {"graph_buckets": "256,512"}])
+def test_model_config_refuses_a_serving_field_it_cannot_read(tmp_path, serving):
+    from manchego_serve import model_config as MC
+    with pytest.raises(MC.ModelConfigError, match="serving"):
+        _config(tmp_path, {"contract": "semif", "serving": serving})
+
+
+def test_command_line_switches(monkeypatch):
+    from manchego_serve.server import fast_request, parse_args
+    for k in ("MANCHEGO_GDN_KERNELS", "MANCHEGO_CUDA_GRAPHS", "MANCHEGO_FAST_HOST", "MANCHEGO_GRAPH_BUCKETS"):
+        monkeypatch.delenv(k, raising=False)
+    assert fast_request(parse_args([])) == FP.FastPathRequest()                       # nothing said: the model decides
+    assert fast_request(parse_args(["--no-cuda-graphs"])) == FP.FastPathRequest(cuda_graphs=False)
+    assert fast_request(parse_args(["--no-fast-host"])) == FP.FastPathRequest(fast_host=False)
+    assert fast_request(parse_args(["--no-fast-path"])) == FP.FastPathRequest("reference", False, None, False)
+    assert fast_request(parse_args(["--fast-path"])) == FP.FastPathRequest("fast", True, None, True)
+    assert fast_request(parse_args(["--graph-buckets", "512,128"])).graph_buckets == (512, 128)
+    for bad in (["--cuda-graphs", "--no-cuda-graphs"], ["--fast-host", "--no-fast-host"], ["--fast-path", "--no-fast-path"]):
+        with pytest.raises(SystemExit):
+            parse_args(bad)
+    monkeypatch.setenv("MANCHEGO_CUDA_GRAPHS", "0")
+    monkeypatch.setenv("MANCHEGO_FAST_HOST", "off")
+    assert fast_request(parse_args([])) == FP.FastPathRequest(cuda_graphs=False, fast_host=False)
+    assert fast_request(parse_args(["--cuda-graphs"])).cuda_graphs is True                # the flag beats the environment
+    monkeypatch.setenv("MANCHEGO_CUDA_GRAPHS", "")
+    assert fast_request(parse_args([])).cuda_graphs is None
+    monkeypatch.setenv("MANCHEGO_CUDA_GRAPHS", "maybe")
+    with pytest.raises(SystemExit):
+        parse_args([])
+
+
+def test_healthz_reports_the_settings_only_when_there_are_some():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+    from manchego_serve.decider import Decider
+    from manchego_serve.server import create_app
+    from test_server import FakeBackend
+    plain = TestClient(create_app(Decider(FakeBackend(), info={"model_config": {"contract": "auto"}}))).get("/healthz").json()
+    assert "fast_path_settings" not in plain and "serving" not in plain["model_config"]
+    _, rep = FP.settle(FP.FastPathRequest(), V3_SERVING, "torch", "cpu")
+    h = TestClient(create_app(Decider(FakeBackend(), info={"fast_path_settings": rep}))).get("/healthz").json()
+    assert h["fast_path_settings"]["note"].startswith("the model folder's serving defaults")
+
+
 def test_mlx_refuses_the_fast_path():
     with pytest.raises(FP.FastPathError, match="torch backend"):
         load_backend("mlx", "/nonexistent", fast=FP.FastPathConfig(fast_host=True))

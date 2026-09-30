@@ -1,7 +1,8 @@
 # Copyright 2026 oraculumai
 # SPDX-License-Identifier: Apache-2.0
-"""The torch backend's fast path (0.2.0.dev). Every piece is opt-in and OFF by default; with all of them off the torch
-backend runs the 0.1.x code, and the published numbers' arithmetic.
+"""The torch backend's fast path (0.2.0). Every piece is OFF unless the command line, the environment or the model
+folder's manchego_config.json (`serving`, CUDA only; `settle` below) turns it on; with all of them off the torch backend
+runs the 0.1.x code, and the published numbers' arithmetic. docs/FAST_PATH.md has the measurements.
 
   gdn_kernels   Qwen3.5's gated-delta-net (linear-attention) layers. "reference" (default): Transformers' reference PyTorch
                 functions, EVEN when flash-linear-attention or causal-conv1d is installed (0.1.x used them silently when
@@ -34,6 +35,7 @@ import functools
 import importlib
 import importlib.util
 import inspect
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -52,6 +54,11 @@ ROWS_CACHE_ENTRIES = 32
 
 class FastPathError(RuntimeError):
     """A fast-path setting this runtime cannot honour. The server refuses to start rather than run something else."""
+
+
+ASKED = "command line or environment"
+MODEL = "manchego_config.json (serving)"
+DEFAULT = "default"
 
 
 @dataclass(frozen=True)
@@ -90,6 +97,61 @@ class FastPathConfig:
     def describe(self) -> dict:
         return {"gdn_kernels": self.gdn_kernels, "cuda_graphs": list(self.graph_buckets) if self.cuda_graphs else False,
                 "fast_host": self.fast_host}
+
+
+@dataclass(frozen=True)
+class FastPathRequest:
+    """What the command line and the environment ask for. None means "not said": the model folder's serving defaults
+    decide (on CUDA), else the piece is off."""
+    gdn_kernels: str | None = None
+    cuda_graphs: bool | None = None
+    graph_buckets: tuple | None = None
+    fast_host: bool | None = None
+
+    def as_config(self) -> FastPathConfig:
+        """Only what was asked; everything not said is off (the model folder is not consulted)."""
+        return FastPathConfig(gdn_kernels=self.gdn_kernels or "reference", cuda_graphs=bool(self.cuda_graphs),
+                              graph_buckets=tuple(self.graph_buckets or DEFAULT_BUCKETS), fast_host=bool(self.fast_host))
+
+
+def settle(request: FastPathRequest, serving: dict | None, backend: str, device: str | None) -> tuple[FastPathConfig, dict]:
+    """The fast-path configuration in force, and where each setting came from.
+
+    Per setting, the first that says something wins: the command line or the environment (`request`), then the model
+    folder's `serving` defaults (manchego_config.json; only for the torch backend on a CUDA device), then off (the
+    reference path). The kernels are never a model default. When the model's defaults are not applied because this is
+    not CUDA, the report's `note` says so and nothing else happens: the server starts on the reference path.
+    """
+    model = dict(serving or {})
+    on_cuda = backend == "torch" and str(device or "").startswith("cuda")
+    use = on_cuda and bool(model)
+    source: dict[str, str] = {}
+
+    def pick(name: str, asked: Any, fallback: Any, from_model: bool = True) -> Any:
+        if asked is not None:
+            source[name] = ASKED
+            return asked
+        if from_model and use and name in model:
+            source[name] = MODEL
+            return model[name]
+        source[name] = DEFAULT
+        return fallback
+
+    gdn = pick("gdn_kernels", request.gdn_kernels, "reference", from_model=False)
+    graphs = pick("cuda_graphs", request.cuda_graphs, False)
+    buckets = pick("graph_buckets", tuple(request.graph_buckets) if request.graph_buckets else None, DEFAULT_BUCKETS,
+                   from_model=graphs)
+    host = pick("fast_host", request.fast_host, False)
+    cfg = FastPathConfig(gdn_kernels=gdn, cuda_graphs=graphs, graph_buckets=tuple(buckets), fast_host=host)
+    report: dict[str, Any] = {"in_force": cfg.describe(), "source": source}
+    if serving is not None:
+        report["model_defaults"] = model
+        report["model_defaults_applied"] = sorted(k for k, v in source.items() if v == MODEL)
+        if model and not on_cuda:
+            where = f"the {backend} backend" + (f" on {device}" if device else "")
+            report["note"] = (f"the model folder's serving defaults {json.dumps(model, sort_keys=True)} apply only to the "
+                              f"torch backend on CUDA; this server runs {where}, so they are not applied")
+    return cfg, report
 
 
 def parse_buckets(text: str) -> tuple:

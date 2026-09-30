@@ -220,7 +220,8 @@ def latency(a) -> int:
               "latency": summary_ms(ms) if ms else None, "mean_input_tokens": statistics.fmean(tokens) if tokens else None,
               "by_prompt_tokens": {("<=" + str(k) if k < 10 ** 9 else ">2048"): summary_ms(v) for k, v in sorted(by_len.items())},
               "server": {k: health.get(k) for k in ("server", "backend", "precision", "contract", "execution", "temperature",
-                                                   "weights_sha256", "weights_verified", "fast_path", "runtime", "warmup")}}
+                                                   "weights_sha256", "weights_verified", "fast_path", "fast_path_settings", "runtime",
+                                                   "warmup")}}
     text = json.dumps(report, indent=1)
     if a.out:
         Path(a.out).write_text(text + "\n")
