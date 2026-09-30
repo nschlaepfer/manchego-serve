@@ -10,7 +10,7 @@ folder's `manchego_config.json` and from the weights' hash ([what changed in 0.2
 |---|---|---|
 | prompt | contract **semif**: SemIf's `direct-options-v1` prompt for 2 to 16 options and a nonempty state, the state-first prompt otherwise | contract **auto**: the short prompt up to 26 options, the state-first prompt for 27 to 255 |
 | temperature (the packaged map, applied by weights hash) | choice 1.5, **noul 0.2**, score 1.0 ([Manchego v3](#manchego-v3-020)) | choice 1.791, noul 1.73, score 1.0 ([Temperature map](#temperature-map-012)) |
-| on an NVIDIA GPU | CUDA graphs + a lean host path by default: probabilities move by up to 0.0385 on the golden questions, no answer changed ([docs/FAST_PATH.md](docs/FAST_PATH.md)) | the reference path, as in 0.1.x |
+| on an NVIDIA GPU | the lean host path by default (bit-for-bit the reference); CUDA graphs opt-in (`--cuda-graphs`: faster on Windows, slower on Linux; [docs/FAST_PATH.md](docs/FAST_PATH.md)) | the reference path, as in 0.1.x |
 | everything else | **one pass** per question, the client's option order, confidence **(K · max p − 1) / (K − 1)**, every question scored as **its own sequence** | the same; 0.1.2's prompts and answers, byte for byte |
 
 The model cards' numbers are at temperature 1.0: `--temperature-map off` reads every model that way. `--no-fast-path`
@@ -38,6 +38,8 @@ Runs on Linux + NVIDIA CUDA (PyTorch, bf16), on CPU (PyTorch, float32), and on A
 - the **fast path on an NVIDIA RTX 5090** (Windows, 2026-09-30; the v3 release candidate's bf16 weights; the fast-path
   code of 0.2.0, run outside Docker): the lean host path identical to the reference, CUDA graphs within 0.0385 with no
   answer changed, serial single-question p50 124 ms → 26 ms; the v3 temperature map served as a file
+- the **Docker image on a Linux A10** (2026-09-30, commit a10cc27, v3 bf16 weights verified): CUDA graphs were slower than
+  the reference at every prompt length (median 71 vs 54 ms up to 256 tokens), so v3's default keeps them off
   ([docs/FAST_PATH.md](docs/FAST_PATH.md#validation-on-an-rtx-5090-windows)).
 
 Not yet run: a 0.2.0 container image, and 0.2.0's start-up choices on CUDA (the model folder's serving defaults and the
@@ -112,7 +114,7 @@ serves it from the cache: a version name means the commit this package pins, nev
 | `--temperature-map` | `default` | `default`: the packaged maps, each applied only to the weights it is bound to by hash (v3's to the v3 builds under contract semif, v2.1's to the v2.1 builds it lists under contract auto; T = 1.0 for any other model); `off` (or `--no-temperature-map`): temperature 1.0 for every type, the model cards' numbers; or a JSON file (schema 1, or schema 2 bound to one model's weights). Or `$MANCHEGO_TEMPERATURE_MAP` |
 | `--contract` | `model` | `model`: the `contract` field of the model folder's `manchego_config.json`, `auto` when absent (v2.1); `auto`; or `semif`. Or `$MANCHEGO_CONTRACT` |
 | `--gdn-kernels` | `reference` | torch, CUDA: `fast` runs flash-linear-attention / causal-conv1d kernels in Qwen3.5's linear-attention layers where importable; `reference` runs Transformers' PyTorch functions even when those packages are installed. Never a model default. Or `$MANCHEGO_GDN_KERNELS`. [docs/FAST_PATH.md](docs/FAST_PATH.md) |
-| `--cuda-graphs` / `--no-cuda-graphs`, `--graph-buckets` | the model folder's `serving` field on CUDA (v3: on), else off; `256,512,1024,2048` | torch, CUDA: one-prompt forwards replayed as CUDA graphs at padded lengths. Or `$MANCHEGO_CUDA_GRAPHS=1` / `0`, `$MANCHEGO_GRAPH_BUCKETS` |
+| `--cuda-graphs` / `--no-cuda-graphs`, `--graph-buckets` | the model folder's `serving` field on CUDA (v3: off), else off; `256,512,1024,2048` | torch, CUDA: one-prompt forwards replayed as CUDA graphs at padded lengths. Or `$MANCHEGO_CUDA_GRAPHS=1` / `0`, `$MANCHEGO_GRAPH_BUCKETS` |
 | `--fast-host` / `--no-fast-host` | the model folder's `serving` field on CUDA (v3: on), else off | torch: one-prompt calls without needless host syncs; bit for bit the reference. Or `$MANCHEGO_FAST_HOST=1` / `0` |
 | `--fast-path` / `--no-fast-path` | neither | all three of the above / none of them (the reference path, whatever the model folder says) |
 
@@ -126,7 +128,7 @@ serves it from the cache: a version name means the commit this package pins, nev
 | prompt | contract **auto** (Manchego v2.1; the default whenever the model folder's `manchego_config.json` names no contract): questions with at most 26 options use the short prompt Manchego was trained on (question, `State:`, `Options:` with codes A–Z, "Reply with only the letter of the best option."); 27 to 255 options use the state-first prompt of `contract_v2.py` (system message, fenced state, two-letter codes). Chat template with `add_generation_prompt=True`, `enable_thinking=False`. |
 | prompt (0.2.0) | contract **semif** (`"contract": "semif"` in `manchego_config.json`, for models trained under SemIf such as Manchego v3): a question with 2 to 16 options and a nonempty state uses SemIf's `direct-options-v1` prompt (`contract_semif.py`: a system message and one JSON user message `{evidence, criterion, options}`, letters A–P, noul as true then false); every other question (17 to 255 options, or a state that is `""`, `{}`, `[]` or `null`) uses the state-first prompt of `contract_v2.py`, never the short prompt. This is the rule the research repository's development reads apply; `tests/test_semif.py` checks every prompt and token id against its training code. `contract_by_question` says which prompt each question got (`semif` or `state_first`). |
 | readout | the hidden state at the last prompt position, projected in float32 onto the output-embedding rows of the offered option codes only; softmax at the question type's temperature (the packaged map bound to the weights: v3 choice 1.5, noul 0.2, score 1.0; v2.1 choice 1.791, noul 1.73, score 1.0; any other model, or `--temperature-map off`: 1.0). Probabilities cover exactly the offered options and sum to 1. The chosen option is the largest logit, whatever the temperature. |
-| fast path (0.2.0) | the model folder's `serving` field, on CUDA only: v3 declares CUDA graphs + the lean host path, v2.1 nothing. Flags and environment override it. [docs/FAST_PATH.md](docs/FAST_PATH.md) |
+| fast path (0.2.0) | the model folder's `serving` field, on CUDA only: v3 declares the lean host path (CUDA graphs off), v2.1 nothing. Flags and environment override it. [docs/FAST_PATH.md](docs/FAST_PATH.md) |
 | passes | one prompt per question, one option order (the client's), no ensembling; the only calibration is the per-type temperature |
 | confidence | `(K * max(p) - 1) / (K - 1)`, clamped to [0, 1], K = number of options (TypeSafe's published definition); Noul answers carry none |
 | isolation | every question is its own sequence: its own prompt and its own row. No question can attend to, or share state with, another; question names never reach the model |
@@ -141,7 +143,7 @@ Manchego v3 is Qwen3.5-4B with a LoRA adapter trained under the SemIf prompt con
 
 ```json
 {"model": "Manchego", "version": "v3", "contract": "semif", "served_name": "manchego-3",
- "serving": {"cuda_graphs": true, "fast_host": true}}
+ "serving": {"cuda_graphs": false, "fast_host": true}}
 ```
 
 - **Prompt: contract `semif`** (the table above). v3 was trained on SemIf prompts only. Questions it sees through the
@@ -171,14 +173,13 @@ Manchego v3 is Qwen3.5-4B with a LoRA adapter trained under the SemIf prompt con
   - v2.1's map does the opposite (noul T = 1.73 softens), which is why v2.1 should run with `--temperature-map off` on
     JevBench v1.5 (the warning below).
   - Choice T = 1.5 flattens the choice probabilities (a lower `confidence`); score T = 1.0 leaves scores as they are.
-- **Speed: CUDA graphs + the lean host path by default** on an NVIDIA GPU (the folder's `serving` field). On CPU, MPS
-  or MLX they are not applied, and `/healthz` says so. On an RTX 5090, serial single-question latency over the golden
-  mix went from p50 124 ms / p95 232 ms to p50 26 ms / p95 180 ms.
-  - **Disclosed deviation:** the graphs change v3's probabilities by up to 0.0385 on the 83 golden questions (up to
-    0.0626 with other bucket sets), with no chosen option changed. That exceeds the 0.03 criterion set before the
-    measurement. Serving them by default is the account holder's decision, recorded with the numbers in
-    [docs/FAST_PATH.md](docs/FAST_PATH.md#validation-on-an-rtx-5090-windows).
-  - `--no-fast-path` (or `--no-cuda-graphs`) serves the reference arithmetic.
+- **Speed: the lean host path by default** on an NVIDIA GPU (the folder's `serving` field): bit-for-bit the reference
+  arithmetic with less host work. On CPU, MPS or MLX it is not applied, and `/healthz` says so.
+  - **CUDA graphs are off by default.** On Linux (a Docker image on an A10) they were slower at every prompt length
+    (median 71 vs 54 ms up to 256 tokens, 275 vs 190 ms up to 1,024); on Windows (an RTX 5090) they were about five times
+    faster (p50 26 vs 124 ms), because per-call overhead dominates there. `--cuda-graphs` turns them on. They change
+    v3's probabilities by up to 0.0385 on the 83 golden questions (up to 0.0626 with other bucket sets), with no chosen
+    option changed ([docs/FAST_PATH.md](docs/FAST_PATH.md)).
   - The flash-linear-attention / causal-conv1d kernels stay off (`--gdn-kernels reference`): they changed an answer.
 - **Weights:** see [Pinned weights](#pinned-weights). v3's Hub revisions are filled in after the upload.
 
@@ -274,9 +275,9 @@ the weights were not hashed (`--no-hash`), or when `contract` is not the served 
 
 | repository | version | revision | weight files (SHA-256) | `weights_sha256` reported |
 |---|---|---|---|---|
-| `oraculumai/Manchego` (bf16, torch) | v3 | `f82e029d0ad4d1bdd1ca12f5f7b548b84fabc9a9` | `model.safetensors-00001-of-00002.safetensors` `036f8c81…86b89d`, `-00002-of-00002` `44fb326e…428af6` | `2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b` |
-| `oraculumai/Manchego-MLX-8bit` | v3 | `4ebdc0dd50481cfa9e40f83f05571ee59e53041d` | `model.safetensors` `02546297…248e85` | `358b025b04001e50a065f8c87929175211264bd6182af74b67bd6caa2f639657` |
-| `oraculumai/Manchego-MLX-4bit` | v3 | `0c17e076e8e358e41a9f8332dca062e4942ace0b` | `model.safetensors` `a6e8ea1e…8428be` | `e1bc5538b8dced2a857b4980dba045c2ca01db1c369aa416fc19f0f5c593e782` |
+| `oraculumai/Manchego` (bf16, torch) | v3 | `53251b0c118d28bfe7908eac1b3a02c08a877edc` | `model.safetensors-00001-of-00002.safetensors` `036f8c81…86b89d`, `-00002-of-00002` `44fb326e…428af6` | `2ee838433bfe278a226dc644667ad4a99ece82cc47325c7645a7dae723c1863b` |
+| `oraculumai/Manchego-MLX-8bit` | v3 | `778cc7b870ac74c2676efbf803c8baf28c13922e` | `model.safetensors` `02546297…248e85` | `358b025b04001e50a065f8c87929175211264bd6182af74b67bd6caa2f639657` |
+| `oraculumai/Manchego-MLX-4bit` | v3 | `ade390a4644d73e288f7ea442a10f980495816ec` | `model.safetensors` `a6e8ea1e…8428be` | `e1bc5538b8dced2a857b4980dba045c2ca01db1c369aa416fc19f0f5c593e782` |
 | `oraculumai/Manchego` (bf16, torch) | v2.1 | `77403228b7dfdf823af99a5f562bdcf80b708d4c` (tag `v2.1`) | `model.safetensors-00001-of-00002.safetensors` `1d5df0ff…89efe3`, `-00002-of-00002` `b12ea489…e5aa0a` | `1130745e2a9506ece5a35a1d3da5ad1ce17e8a05052d8fc45d1971986bd8de61` |
 | `oraculumai/Manchego-MLX-8bit` | v2.1 | `79e55e2d0c4446abfe0d55d829e8854de9177c1b` (tag `v2.1`) | `model.safetensors` `ffa9e0c3…ed5ef43` | `6b0cb89600ffcc0941c557ac60a8445709d5f996a6baec24d9a92213ddccf84b` |
 | `oraculumai/Manchego-MLX-4bit` | v2.1 | `184016ce35c3a400880634352360b39cfdbb901e` (tag `v2.1`) | `model.safetensors` `301da641…e09e2` | `0fb734ac0221f4fcc314daae3ac2391f1eb41dc2f381ef9c2fe319907e49a98a` |
@@ -412,9 +413,9 @@ is imported, and never downloads).
 - **Kernels and the fast path.** The image uses Transformers' reference PyTorch kernels for Qwen3.5's linear-attention
   layers (`flash-linear-attention` and `causal-conv1d` are not installed; the log says so at start-up). Since 0.2.0 the
   reference kernels run even when those packages are installed; `--gdn-kernels fast` (or `--fast-path`) opts in to
-  them and changes the arithmetic slightly. **Manchego v3 on CUDA runs CUDA graphs and the lean host path by default**
-  (its `manchego_config.json`), which moves its probabilities by up to 0.0385 on the golden questions and changes no
-  answer ([docs/FAST_PATH.md](docs/FAST_PATH.md#validation-on-an-rtx-5090-windows)); `--no-fast-path` gives the
+  them and changes the arithmetic slightly. **Manchego v3 on CUDA runs the lean host path by default**
+  (its `manchego_config.json`; bit-for-bit the reference); CUDA graphs are opt-in (`--cuda-graphs`,
+  [docs/FAST_PATH.md](docs/FAST_PATH.md)); `--no-fast-path` gives the
   reference arithmetic. `/healthz` reports what runs under `runtime.gdn_kernels` and `fast_path_settings`, and every
   response carries `manchego.fast_path` when a fast-path piece is on.
 - **One model worker.** Requests are served one at a time; up to 32 wait (then 529 with `retry-after`), each for at

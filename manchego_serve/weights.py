@@ -27,9 +27,9 @@ from pathlib import Path
 
 # Manchego v3's commits on the Hub. PLACEHOLDERS: each is replaced by the full 40-character sha of the commit that holds
 # the v3 files, after the upload (the release plan's commit A), and before this package is tagged.
-V3_REVISION = "f82e029d0ad4d1bdd1ca12f5f7b548b84fabc9a9"       # oraculumai/Manchego, tag v3 (2026-09-30)
-V3_MLX8_REVISION = "4ebdc0dd50481cfa9e40f83f05571ee59e53041d"  # oraculumai/Manchego-MLX-8bit, tag v3
-V3_MLX4_REVISION = "0c17e076e8e358e41a9f8332dca062e4942ace0b"  # oraculumai/Manchego-MLX-4bit, tag v3
+V3_REVISION = "53251b0c118d28bfe7908eac1b3a02c08a877edc"       # oraculumai/Manchego, tag v3 (2026-09-30)
+V3_MLX8_REVISION = "778cc7b870ac74c2676efbf803c8baf28c13922e"  # oraculumai/Manchego-MLX-8bit, tag v3
+V3_MLX4_REVISION = "ade390a4644d73e288f7ea442a10f980495816ec"  # oraculumai/Manchego-MLX-4bit, tag v3
 
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 BF16_SUPPORT = {   # identical in v2.1 and v3

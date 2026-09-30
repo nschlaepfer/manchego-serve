@@ -128,9 +128,9 @@ def test_v3_revisions_are_the_uploaded_commits():
     available by name."""
     got = {"oraculumai/Manchego": weights.V3_REVISION, "oraculumai/Manchego-MLX-8bit": weights.V3_MLX8_REVISION,
            "oraculumai/Manchego-MLX-4bit": weights.V3_MLX4_REVISION}
-    assert got == {"oraculumai/Manchego": "f82e029d0ad4d1bdd1ca12f5f7b548b84fabc9a9",
-                   "oraculumai/Manchego-MLX-8bit": "4ebdc0dd50481cfa9e40f83f05571ee59e53041d",
-                   "oraculumai/Manchego-MLX-4bit": "0c17e076e8e358e41a9f8332dca062e4942ace0b"}
+    assert got == {"oraculumai/Manchego": "53251b0c118d28bfe7908eac1b3a02c08a877edc",
+                   "oraculumai/Manchego-MLX-8bit": "778cc7b870ac74c2676efbf803c8baf28c13922e",
+                   "oraculumai/Manchego-MLX-4bit": "ade390a4644d73e288f7ea442a10f980495816ec"}
     assert sorted(v for v, _, _ in weights.published_pins()) == ["v2.1"] * 3 + ["v3"] * 3
     for repo in V3_DIGESTS:
         assert weights.default_version(repo) == "v3" and weights.pinned_revision(repo) == got[repo]

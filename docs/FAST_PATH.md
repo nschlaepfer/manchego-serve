@@ -287,3 +287,22 @@ invented data only.
 - **`kernels` fails `agree` but `graphs` passes.** Check the kernel versions first, and Triton on Hopper.
 - **`fast_host` is not exactly 0.** The fast path is then not doing what it claims. Report the question named in
   `max_dprob_question`.
+
+
+## Validation on Linux (A10, Docker) and the v3 default
+
+Run on 2026-09-30 on a Lambda A10 (Linux, driver 570.148.08) with the Docker image built from commit a10cc27 exactly as the
+README says, Manchego v3's bf16 weights (`weights_verified: true`), contract semif, 450 serial single-decision requests over the
+invented test questions. Median latency by prompt length, reference path vs CUDA graphs + fast host:
+
+| prompt tokens | reference | graphs + fast host |
+|---|---:|---:|
+| up to 256 | 54 ms | 71 ms |
+| up to 512 | 134 ms | 143 ms |
+| up to 1,024 | 190 ms | 275 ms |
+| up to 2,048 | 357 ms | 543 ms |
+
+On Linux the padding to a graph size costs more than the captured replay saves, at every length; on Windows (the RTX 5090
+above) per-call overhead dominates and the graphs were about five times faster. **Decision (the account holder,
+2026-09-30): v3's `manchego_config.json` turns CUDA graphs OFF and keeps the fast host path (bit-for-bit the reference) on.**
+`--cuda-graphs` turns the graphs on where they help.

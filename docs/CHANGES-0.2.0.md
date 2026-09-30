@@ -2,7 +2,7 @@
 
 **Status.** `0.2.0` on the local branch `fast-path`. It is not tagged, pushed, published or built into an image. The
 published version is 0.1.1; 0.1.2 (the v2.1 temperature map) exists only on local `main`, and 0.2.0 builds on it.
-The v3 Hub revisions are filled in: Manchego `f82e029d`, MLX-8bit `4ebdc0dd`, MLX-4bit `0c17e076` (tag `v3`, 2026-09-30); v3 is the default.
+The v3 Hub revisions are filled in: Manchego `53251b0c`, MLX-8bit `778cc7b8`, MLX-4bit `ade390a4` (tag `v3`, 2026-09-30); v3 is the default.
 
 **What it serves.** Manchego v3, the new default model, and Manchego v2.1, each under its own published policy. The
 model folder's `manchego_config.json` selects the prompt contract and the default fast path; the weights' hash
@@ -12,7 +12,7 @@ selects the packaged temperature map.
 |---|---|---|
 | contract (`manchego_config.json`) | `semif` | `auto` (no field) |
 | default temperature map (by `weights_sha256`) | `temperature_map_v3.json`: choice 1.5, noul 0.2, score 1.0 | `temperature_map_v2.1.json`: choice 1.791, noul 1.73, score 1.0 (unchanged) |
-| default fast path (`serving`, CUDA only) | CUDA graphs + the lean host path | none |
+| default fast path (`serving`, CUDA only) | the lean host path (CUDA graphs off after the Linux check) | none |
 
 **Unchanged for v2.1.** A folder without `contract` and `serving` fields (the published v2.1 folder) gets 0.1.2's
 prompts, token ids, temperature map, answers, responses and `/healthz`, byte for byte, apart from the version string
@@ -208,4 +208,10 @@ transformers 5.17.0 but no fastapi (both Python 3.12.11). The tokenizer is v2.1'
 `pyproject.toml` and `manchego_serve.__version__` are `0.2.0`. Responses say `"server": "manchego-serve 0.2.0"`.
 
 
-**Filled in 2026-09-30:** `V3_REVISION = f82e029d0ad4d1bdd1ca12f5f7b548b84fabc9a9`, `V3_MLX8_REVISION = 4ebdc0dd50481cfa9e40f83f05571ee59e53041d`, `V3_MLX4_REVISION = 0c17e076e8e358e41a9f8332dca062e4942ace0b` (the verified upload commits); the Dockerfile default is `v3`; the README note and table cells are updated.
+**Filled in 2026-09-30:** `V3_REVISION = 53251b0c118d28bfe7908eac1b3a02c08a877edc`, `V3_MLX8_REVISION = 778cc7b870ac74c2676efbf803c8baf28c13922e`, `V3_MLX4_REVISION = ade390a4644d73e288f7ea442a10f980495816ec` (the verified upload commits); the Dockerfile default is `v3`; the README note and table cells are updated.
+
+**Linux check and the v3 default (2026-09-30).** The Docker image built from a10cc27 on a Lambda A10 served v3 with weights
+verified, contract semif and the v3 temperature map. CUDA graphs were slower than the reference at every prompt length there
+(median 71 vs 54 ms up to 256 tokens; 275 vs 190 ms up to 1,024), so the account holder turned them off for v3: its
+`manchego_config.json` now declares `{"cuda_graphs": false, "fast_host": true}` (Hub commits 53251b0c, 778cc7b8, ade390a4,
+tag `v3` moved to them) and this package pins those commits. Details in docs/FAST_PATH.md.
