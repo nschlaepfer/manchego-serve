@@ -8,6 +8,11 @@ manchego_serve/contract_v2.py is copied unchanged from the Manchego v2.1 model r
 77403228b7dfdf823af99a5f562bdcf80b708d4c, tag v2.1; git blob a6c586acbf861ce55e4a4ed6dfd78d7d4515f5d5),
 which is distributed under the Apache License, Version 2.0. Copyright 2026 oraculumai.
 
+manchego_serve/contract_semif.py is copied unchanged (below a three-line release note) from the Manchego research
+repository (qwen_decisions/semif_contract.py, sha256 86740b8de986e1b4390075266573adc9ef5b7a96e280c25c696255a807c59c31),
+Apache License, Version 2.0, Copyright 2026 oraculumai. It renders prompts in the format of SemIf's `direct-options-v1`
+prompt (SemIf-OpenJev, https://github.com/TheoLeeCJ/SemIf-OpenJev, MIT License), including SemIf's system message text.
+
 This software serves, and does not contain, the Manchego v2.1 weights. Those weights are a modified version of
 Qwen3.5-4B (https://huggingface.co/Qwen/Qwen3.5-4B, Apache License 2.0, Copyright 2026 Alibaba Cloud); their own
 NOTICE and model card (https://huggingface.co/oraculumai/Manchego) carry the attribution of the base model and of the

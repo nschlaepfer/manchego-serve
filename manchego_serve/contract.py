@@ -10,7 +10,19 @@ Policy (contract "auto"), fixed:
     `--temperature-map off`, as in v0.1.0); one option order (the client's); the chosen option is the largest logit;
     confidence = (K * max p - 1) / (K - 1), clamped to [0, 1].
 
-The short prompt is the one Manchego was trained on, byte for byte. Nothing here imports an ML library.
+The short prompt is the one Manchego was trained on, byte for byte.
+
+Policy "semif" (0.2.0, for models trained under the SemIf prompt contract; chosen per model by the `contract` field of the
+model folder's manchego_config.json, see model_config.py):
+  * a question SemIf can show (2 to 16 options, a nonempty state, noul as true/false) is rendered by `contract_semif.py`
+    (SemIf `direct-options-v1`: a system message and one JSON user message, letters A-P, noul as true then false), exactly
+    as the research repository's training and development-read code renders it;
+  * every other question (17 to 255 options, or an empty state: "", {}, [] or null) falls back to the state-first prompt of
+    `contract_v2.py`, codes A-Z then two-letter codes: the v2 overflow rule of those development reads. The short prompt
+    is never used under "semif", not even for 17 to 26 options.
+  The readout, the temperature, the choice and the confidence are the same as under "auto".
+
+Nothing here imports an ML library.
 """
 
 from __future__ import annotations
@@ -19,6 +31,7 @@ import json
 import math
 from typing import Any
 
+from . import contract_semif as SEMIF_R
 from . import contract_v2 as V2
 
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -26,7 +39,10 @@ OURS_TAIL = "Reply with only the letter of the best option."
 NOUL_DEFAULT = {"true": "the condition holds", "false": "the condition does not hold"}
 
 SHORT, STATE_FIRST, AUTO = "short", "state_first", "auto"
+SEMIF = "semif"                        # both a policy (SemIf, with the v2 overflow) and the name of the SemIf prompt itself
+POLICIES = (AUTO, SEMIF)
 LIMIT = {SHORT: 26, STATE_FIRST: 255, AUTO: 255}
+SEMIF_MAX_OPTIONS = len(SEMIF_R.LETTERS)   # 16: what the SemIf prompt itself shows; the policy takes up to 255 through the overflow
 MAX_OPTIONS = LIMIT[AUTO]
 TEMPERATURE = 1.0
 PERMUTE = 1
@@ -93,6 +109,38 @@ def codes_for(contract: str, n: int) -> list[str]:
     if contract == STATE_FIRST:
         return V2.codebook(n)
     return list(LETTERS[:n])
+
+
+def semif_can_show(kind: str, state: Any, opts: list[tuple[str, Any]]) -> bool:
+    """Whether the SemIf prompt shows this question, exactly as the development reads decide it
+    (scripts/lean_reads_score.py `semif_can_show`): 2..16 options of a known kind, a nonempty state, and for noul exactly
+    the values true and false. Everything else goes to contract v2."""
+    n = len(opts)
+    if kind not in SEMIF_R.KINDS or not 2 <= n <= SEMIF_MAX_OPTIONS:
+        return False
+    if state is None or state == "" or state == {} or state == []:
+        return False
+    return kind != "noul" or sorted(str(v) for v, _ in opts) == ["false", "true"]
+
+
+def prompt_for(policy: str, state: Any, q: dict, opts: list[tuple[str, str | None]]) -> dict:
+    """The prompt one question is read with under a policy: {contract, messages, codes, order}.
+
+    `codes[j]` is the option-code token read for slot j, and `order[j]` the index (in the client's option order) of the
+    option in slot j. Under "auto" the slots are the client's order. Under "semif" they are SemIf's keys, which are also the
+    client's order: noul is always true then false (options_of gives it that way), choice and score keep their order.
+    """
+    if policy == AUTO:
+        c = contract_for(len(opts))
+        return {"contract": c, "messages": RENDER[c](state, q, opts), "codes": codes_for(c, len(opts)), "order": list(range(len(opts)))}
+    if policy != SEMIF:
+        raise ValueError(f"unknown contract policy {policy!r}; expected one of {POLICIES}")
+    if not semif_can_show(q["type"], state, opts):
+        return {"contract": STATE_FIRST, "messages": render_v2(state, q, opts), "codes": codes_for(STATE_FIRST, len(opts)),
+                "order": list(range(len(opts)))}
+    r = SEMIF_R.render(state, q["instructions"], opts, q["type"])
+    index = {str(v): i for i, (v, _) in enumerate(opts)}
+    return {"contract": SEMIF, "messages": r["messages"], "codes": r["letters"], "order": [index[k] for k in r["keys"]]}
 
 
 def softmax(z: list[float], T: float = TEMPERATURE) -> list[float]:

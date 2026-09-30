@@ -8,14 +8,23 @@ from typing import Any
 
 from . import __version__
 from . import temperature as TM
-from .contract import (AUTO, CONFIDENCE_DEFINITION, MAX_OPTIONS, PERMUTE, RENDER, BadRequest, answer, codes_for,
-                       contract_for, options_of)
+from .contract import AUTO, CONFIDENCE_DEFINITION, MAX_OPTIONS, PERMUTE, POLICIES, BadRequest, answer, options_of, prompt_for
 
 MODEL_NAME = "manchego-2.1"
 DEFAULT_MAX_PROMPT_TOKENS = 32768     # per question: state + question + options, after the chat template
 DEFAULT_MAX_QUESTIONS = 1024          # per request; every question re-reads the state
 DEFAULT_BATCH_TOKENS = 16384          # padded-token budget of one microbatch (execution "batched" only)
 EXECUTIONS = ("sequential", "batched")
+
+
+def in_client_order(z: list[float], order: list[int]) -> list[float]:
+    """Slot logits -> logits in the client's option order (`order[j]` is the option shown in slot j)."""
+    if all(i == j for j, i in enumerate(order)):
+        return z
+    out = [0.0] * len(z)
+    for j, i in enumerate(order):
+        out[i] = z[j]
+    return out
 
 
 class Decider:
@@ -30,13 +39,20 @@ class Decider:
     temperature_map: one temperature per question type, applied to the option-code logits before the softmax
     (temperature.py). The default here is `temperature.OFF` (T = 1.0, the v0.1.0 readout); the server's command line
     loads the fitted v2.1 map by default. A temperature never changes the chosen option.
+
+    contract: the prompt policy, "auto" (default; Manchego v2.1) or "semif" (contract.py), normally the model folder's
+    manchego_config.json (model_config.py). model_name: the name put in every response.
     """
 
     def __init__(self, backend, execution: str = "sequential", batch_tokens: int = DEFAULT_BATCH_TOKENS,
                  max_prompt_tokens: int = DEFAULT_MAX_PROMPT_TOKENS, max_questions: int = DEFAULT_MAX_QUESTIONS,
-                 info: dict | None = None, temperature_map: TM.TemperatureMap = TM.OFF):
+                 info: dict | None = None, temperature_map: TM.TemperatureMap = TM.OFF, contract: str = AUTO,
+                 model_name: str = MODEL_NAME):
         if execution not in EXECUTIONS:
             raise ValueError(f"unknown execution {execution!r}; expected one of {EXECUTIONS}")
+        if contract not in POLICIES:
+            raise ValueError(f"unknown contract {contract!r}; expected one of {POLICIES}")
+        self.contract, self.model_name = contract, model_name
         self.b, self.execution, self.batch_tokens = backend, execution, int(batch_tokens)
         self.tmap = temperature_map
         self.max_prompt_tokens, self.max_questions = int(max_prompt_tokens), int(max_questions)
@@ -52,11 +68,14 @@ class Decider:
             self._code_ids[code] = enc[0]
         return self._code_ids[code]
 
+    def _prompt(self, state: Any, q: dict, opts: list[tuple[str, str | None]]) -> tuple[dict, str]:
+        p = prompt_for(self.contract, state, q, opts)
+        return p, self.b.tok.apply_chat_template(p["messages"], tokenize=False, add_generation_prompt=True, enable_thinking=False)
+
     def render(self, state: Any, q: dict, opts: list[tuple[str, str | None]]) -> tuple[str, str]:
-        """(contract, chat-templated prompt text)."""
-        c = contract_for(len(opts))
-        msgs = RENDER[c](state, q, opts)
-        return c, self.b.tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        """(contract the question is shown under, chat-templated prompt text)."""
+        p, text = self._prompt(state, q, opts)
+        return p["contract"], text
 
     def plan(self, state: Any, q: dict) -> dict:
         """Everything about one question that does not need the model."""
@@ -68,13 +87,13 @@ class Decider:
                              "(score levels count as options). Larger menus are refused, not truncated.")
         if len({v for v, _ in opts}) != len(opts):
             raise BadRequest("duplicate option values")
-        c, text = self.render(state, q, opts)
+        p, text = self._prompt(state, q, opts)
         ids = self.b.tok.encode(text, add_special_tokens=False)
         if len(ids) > self.max_prompt_tokens:
             raise BadRequest(f"prompt is {len(ids)} tokens; the maximum context length is {self.max_prompt_tokens} tokens per question "
                              "(state + question + options). Nothing is truncated: send less state.")
-        cands = [self._code_id(code) for code in codes_for(c, len(opts))]
-        return {"q": q, "opts": opts, "contract": c, "ids": list(ids), "cands": cands}
+        cands = [self._code_id(code) for code in p["codes"]]
+        return {"q": q, "opts": opts, "contract": p["contract"], "ids": list(ids), "cands": cands, "order": p["order"]}
 
     # ------------------------------------------------------------------ scoring
     def score_many(self, encoded: list[tuple[list[int], list[int]]]) -> tuple[list[list[float]], int]:
@@ -109,8 +128,9 @@ class Decider:
         names = list(plans)
         logits, calls = self.score_many([(plans[n]["ids"], plans[n]["cands"]) for n in names])
         temps = {n: self.tmap.T(plans[n]["q"]["type"]) for n in names}
-        answers = {n: answer(plans[n]["q"], plans[n]["opts"], z, temps[n]) for n, z in zip(names, logits)}
-        return {"model": MODEL_NAME, "answers": answers,
+        answers = {n: answer(plans[n]["q"], plans[n]["opts"], in_client_order(z, plans[n]["order"]), temps[n])
+                   for n, z in zip(names, logits)}
+        return {"model": self.model_name, "answers": answers,
                 "usage": {"input_tokens": sum(len(plans[n]["ids"]) for n in names), "output_tokens": 0},
                 "manchego": {**self.describe(), "contract_by_question": {n: plans[n]["contract"] for n in names},
                              "temperature_by_question": temps, "forward_passes": calls}}
@@ -118,7 +138,7 @@ class Decider:
     def describe(self) -> dict:
         """What produced the numbers. Reported in every response and by /healthz."""
         return {"server": f"manchego-serve {__version__}", "backend": self.b.name, "precision": getattr(self.b, "precision", None),
-                "contract": AUTO, "temperature": self.tmap.wire_temperature(), "temperature_map": self.tmap.describe(),
+                "contract": self.contract, "temperature": self.tmap.wire_temperature(), "temperature_map": self.tmap.describe(),
                 "permute": PERMUTE, "confidence_definition": CONFIDENCE_DEFINITION,
                 "execution": self.execution, "model_repo": self.info.get("repo"), "model_revision": self.info.get("revision"),
                 "weights_sha256": self.info.get("weights_sha256"), "weights_verified": self.info.get("weights_verified"),

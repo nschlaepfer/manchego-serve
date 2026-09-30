@@ -1,0 +1,647 @@
+{
+ "note": "Invented requests (no benchmark or dataset text) for the SemIf contract's byte-identity test. golden_semif.json holds the training code's output for each (tests/record_semif_golden.py): SemIf renderings, and contract v2 renderings for the rows SemIf cannot show (the v2 overflow rule of scripts/lean_reads_score.py).",
+ "requests": [
+  {
+   "id": "noul_plain",
+   "state": "The door of unit 4 was found open at 02:10.",
+   "question": {
+    "type": "noul",
+    "instructions": "Was the door open?"
+   }
+  },
+  {
+   "id": "noul_criteria",
+   "state": "A reply to a refund request: 'We have issued your refund.'",
+   "question": {
+    "type": "noul",
+    "instructions": "Does the reply answer the request?",
+    "criteria": {
+     "true": "the reply addresses what was asked",
+     "false": "it does not"
+    }
+   }
+  },
+  {
+   "id": "noul_false_first",
+   "state": "Invoice 88 was paid twice.",
+   "question": {
+    "type": "noul",
+    "instructions": "Is a refund owed?",
+    "criteria": {
+     "false": "no money is owed back",
+     "true": "money is owed back"
+    }
+   }
+  },
+  {
+   "id": "noul_json_criterion",
+   "state": {
+    "ticket": 7,
+    "status": "open"
+   },
+   "question": {
+    "type": "noul",
+    "instructions": "Is the ticket still open?",
+    "criteria": {
+     "true": {
+      "status": "open"
+     },
+     "false": null
+    }
+   }
+  },
+  {
+   "id": "noul_empty_criteria",
+   "state": "s",
+   "question": {
+    "type": "noul",
+    "instructions": "q",
+    "criteria": {
+     "true": "",
+     "false": ""
+    }
+   }
+  },
+  {
+   "id": "choice_2_bare",
+   "state": "Customer asks where the parcel is.",
+   "question": {
+    "type": "choice",
+    "instructions": "Which queue?",
+    "criteria": {
+     "shipping": null,
+     "billing": null
+    }
+   }
+  },
+  {
+   "id": "choice_5_mixed",
+   "state": "The customer wants to change the card on file.",
+   "question": {
+    "type": "choice",
+    "instructions": "Route the message.",
+    "criteria": {
+     "billing": "Payment methods, invoices and charges.",
+     "returns": null,
+     "shipping": "",
+     "account": "Login, profile and security.",
+     "other": null
+    }
+   }
+  },
+  {
+   "id": "choice_9_routing",
+   "state": "My login code never arrives.",
+   "question": {
+    "type": "choice",
+    "instructions": "Which category?",
+    "criteria": {
+     "billing": null,
+     "access": null,
+     "shipping": null,
+     "returns": null,
+     "product": null,
+     "security": null,
+     "feedback": null,
+     "sales": null,
+     "other": null
+    }
+   }
+  },
+  {
+   "id": "choice_16_described",
+   "state": "A large order of 400 chairs needs a quote and delivery by Friday.",
+   "question": {
+    "type": "choice",
+    "instructions": "Which team owns this?",
+    "criteria": {
+     "team_00": "Handles requests of kind 0: quotes, schedules and follow-ups for region 0.",
+     "team_01": "Handles requests of kind 1: quotes, schedules and follow-ups for region 1.",
+     "team_02": "Handles requests of kind 2: quotes, schedules and follow-ups for region 2.",
+     "team_03": "Handles requests of kind 3: quotes, schedules and follow-ups for region 3.",
+     "team_04": "Handles requests of kind 4: quotes, schedules and follow-ups for region 0.",
+     "team_05": "Handles requests of kind 5: quotes, schedules and follow-ups for region 1.",
+     "team_06": "Handles requests of kind 6: quotes, schedules and follow-ups for region 2.",
+     "team_07": "Handles requests of kind 7: quotes, schedules and follow-ups for region 3.",
+     "team_08": "Handles requests of kind 8: quotes, schedules and follow-ups for region 0.",
+     "team_09": "Handles requests of kind 9: quotes, schedules and follow-ups for region 1.",
+     "team_10": "Handles requests of kind 10: quotes, schedules and follow-ups for region 2.",
+     "team_11": "Handles requests of kind 11: quotes, schedules and follow-ups for region 3.",
+     "team_12": "Handles requests of kind 12: quotes, schedules and follow-ups for region 0.",
+     "team_13": "Handles requests of kind 13: quotes, schedules and follow-ups for region 1.",
+     "team_14": "Handles requests of kind 14: quotes, schedules and follow-ups for region 2.",
+     "team_15": "Handles requests of kind 15: quotes, schedules and follow-ups for region 3."
+    }
+   }
+  },
+  {
+   "id": "choice_json_descriptions",
+   "state": "Ship to Oslo, 3 kg.",
+   "question": {
+    "type": "choice",
+    "instructions": {
+     "task": "pick a carrier",
+     "constraints": [
+      "cheapest",
+      "tracked"
+     ]
+    },
+    "criteria": {
+     "postal": {
+      "price": 12,
+      "tracked": false
+     },
+     "courier": {
+      "price": 30,
+      "tracked": true
+     },
+     "freight": [
+      1,
+      2,
+      3
+     ],
+     "numeric": 4.5
+    }
+   }
+  },
+  {
+   "id": "choice_unicode",
+   "state": "Le client écrit : « la bouilloire fuit ». 中文 note ✅",
+   "question": {
+    "type": "choice",
+    "instructions": "Quelle équipe ?",
+    "criteria": {
+     "retours": "échanges et remboursements",
+     "livraison": null,
+     "技术": "技术支持 ✅"
+    }
+   }
+  },
+  {
+   "id": "choice_tricky_keys",
+   "state": "Two options that look like numbers and one with punctuation.",
+   "question": {
+    "type": "choice",
+    "instructions": "Pick one.",
+    "criteria": {
+     "1": "one",
+     "2": null,
+     "a: \"b\"": "quoted key"
+    }
+   }
+  },
+  {
+   "id": "score_2",
+   "state": "The essay has no thesis.",
+   "question": {
+    "type": "score",
+    "instructions": "Rate the essay.",
+    "criteria": [
+     "fail",
+     "pass"
+    ]
+   }
+  },
+  {
+   "id": "score_5",
+   "state": "Latency p95 is 119 ms.",
+   "question": {
+    "type": "score",
+    "instructions": "How fast is it?",
+    "criteria": [
+     "very slow",
+     "slow",
+     "ok",
+     "fast",
+     "very fast"
+    ]
+   }
+  },
+  {
+   "id": "score_10_json",
+   "state": "Risk review of vendor X.",
+   "question": {
+    "type": "score",
+    "instructions": "Risk level?",
+    "criteria": [
+     {
+      "level": 0,
+      "label": "risk 0"
+     },
+     {
+      "level": 1,
+      "label": "risk 1"
+     },
+     {
+      "level": 2,
+      "label": "risk 2"
+     },
+     {
+      "level": 3,
+      "label": "risk 3"
+     },
+     {
+      "level": 4,
+      "label": "risk 4"
+     },
+     {
+      "level": 5,
+      "label": "risk 5"
+     },
+     {
+      "level": 6,
+      "label": "risk 6"
+     },
+     {
+      "level": 7,
+      "label": "risk 7"
+     },
+     {
+      "level": 8,
+      "label": "risk 8"
+     },
+     {
+      "level": 9,
+      "label": "risk 9"
+     }
+    ]
+   }
+  },
+  {
+   "id": "score_16",
+   "state": "Sixteen-level rubric.",
+   "question": {
+    "type": "score",
+    "instructions": "Grade it.",
+    "criteria": [
+     "grade 0",
+     "grade 1",
+     "grade 2",
+     "grade 3",
+     "grade 4",
+     "grade 5",
+     "grade 6",
+     "grade 7",
+     "grade 8",
+     "grade 9",
+     "grade 10",
+     "grade 11",
+     "grade 12",
+     "grade 13",
+     "grade 14",
+     "grade 15"
+    ]
+   }
+  },
+  {
+   "id": "score_null_level",
+   "state": "s",
+   "question": {
+    "type": "score",
+    "instructions": "Rate.",
+    "criteria": [
+     "low",
+     null,
+     "high"
+    ]
+   }
+  },
+  {
+   "id": "state_escapes",
+   "state": "Line one.\nLine \"two\" has quotes,\ta tab and a backslash \\ here.\r\nEnd.",
+   "question": {
+    "type": "noul",
+    "instructions": "Does the text mention a tab?"
+   }
+  },
+  {
+   "id": "state_json_object",
+   "state": {
+    "customer": {
+     "name": "Zoë",
+     "tier": "gold"
+    },
+    "items": [
+     {
+      "sku": "A-1",
+      "qty": 2
+     }
+    ],
+    "note": "line1\nline2"
+   },
+   "question": {
+    "type": "choice",
+    "instructions": "Priority?",
+    "criteria": {
+     "high": null,
+     "normal": null,
+     "low": null
+    }
+   }
+  },
+  {
+   "id": "state_json_array",
+   "state": [
+    "event 1",
+    {
+     "t": 3
+    },
+    null,
+    true
+   ],
+   "question": {
+    "type": "noul",
+    "instructions": "Is there a null event?"
+   }
+  },
+  {
+   "id": "state_number",
+   "state": 42,
+   "question": {
+    "type": "score",
+    "instructions": "How large is it?",
+    "criteria": [
+     "small",
+     "medium",
+     "large"
+    ]
+   }
+  },
+  {
+   "id": "instructions_whitespace",
+   "state": "s",
+   "question": {
+    "type": "noul",
+    "instructions": "  Is it red?\n\n"
+   }
+  },
+  {
+   "id": "state_long",
+   "state": "Section 0. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-100 and the customer is told within 1 business days. Exceptions: C:\\claims\\0.txt\tneeds a supervisor.\n\nSection 1. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-101 and the customer is told within 2 business days. Exceptions: C:\\claims\\1.txt\tneeds a supervisor.\n\nSection 2. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-102 and the customer is told within 3 business days. Exceptions: C:\\claims\\2.txt\tneeds a supervisor.\n\nSection 3. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-103 and the customer is told within 4 business days. Exceptions: C:\\claims\\3.txt\tneeds a supervisor.\n\nSection 4. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-104 and the customer is told within 5 business days. Exceptions: C:\\claims\\4.txt\tneeds a supervisor.\n\nSection 5. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-105 and the customer is told within 6 business days. Exceptions: C:\\claims\\5.txt\tneeds a supervisor.\n\nSection 6. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-106 and the customer is told within 7 business days. Exceptions: C:\\claims\\6.txt\tneeds a supervisor.\n\nSection 7. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-107 and the customer is told within 8 business days. Exceptions: C:\\claims\\7.txt\tneeds a supervisor.\n\nSection 8. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-108 and the customer is told within 9 business days. Exceptions: C:\\claims\\8.txt\tneeds a supervisor.\n\nSection 9. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-109 and the customer is told within 10 business days. Exceptions: C:\\claims\\9.txt\tneeds a supervisor.\n\nSection 10. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-110 and the customer is told within 11 business days. Exceptions: C:\\claims\\10.txt\tneeds a supervisor.\n\nSection 11. The warehouse policy says a parcel marked \"fragile\" is inspected at intake; damaged items are logged in ledger R-111 and the customer is told within 12 business days. Exceptions: C:\\claims\\11.txt\tneeds a supervisor.",
+   "question": {
+    "type": "choice",
+    "instructions": "Which ledger covers section 7?",
+    "criteria": {
+     "R-100": null,
+     "R-101": null,
+     "R-102": null,
+     "R-103": null,
+     "R-104": null,
+     "R-105": null,
+     "R-106": null,
+     "R-107": null,
+     "R-108": null,
+     "R-109": null,
+     "R-110": null,
+     "R-111": null
+    }
+   }
+  },
+  {
+   "id": "v2_overflow_17_options",
+   "state": "s",
+   "question": {
+    "type": "choice",
+    "instructions": "q",
+    "criteria": {
+     "k0": null,
+     "k1": null,
+     "k2": null,
+     "k3": null,
+     "k4": null,
+     "k5": null,
+     "k6": null,
+     "k7": null,
+     "k8": null,
+     "k9": null,
+     "k10": null,
+     "k11": null,
+     "k12": null,
+     "k13": null,
+     "k14": null,
+     "k15": null,
+     "k16": null
+    }
+   }
+  },
+  {
+   "id": "v2_overflow_empty_state",
+   "state": "",
+   "question": {
+    "type": "noul",
+    "instructions": "q"
+   }
+  },
+  {
+   "id": "v2_overflow_empty_object_state",
+   "state": {},
+   "question": {
+    "type": "noul",
+    "instructions": "q"
+   }
+  },
+  {
+   "id": "v2_overflow_null_state",
+   "state": null,
+   "question": {
+    "type": "noul",
+    "instructions": "q"
+   }
+  },
+  {
+   "id": "v2_overflow_empty_list_state",
+   "state": [],
+   "question": {
+    "type": "noul",
+    "instructions": "q"
+   }
+  },
+  {
+   "id": "v2_overflow_26_options",
+   "state": "A shelf label reads 'aisle 14, bay 3'.",
+   "question": {
+    "type": "choice",
+    "instructions": "Which bay?",
+    "criteria": {
+     "bay 0": null,
+     "bay 1": "shelf bay number 1",
+     "bay 2": "shelf bay number 2",
+     "bay 3": null,
+     "bay 4": "shelf bay number 4",
+     "bay 5": "shelf bay number 5",
+     "bay 6": null,
+     "bay 7": "shelf bay number 7",
+     "bay 8": "shelf bay number 8",
+     "bay 9": null,
+     "bay 10": "shelf bay number 10",
+     "bay 11": "shelf bay number 11",
+     "bay 12": null,
+     "bay 13": "shelf bay number 13",
+     "bay 14": "shelf bay number 14",
+     "bay 15": null,
+     "bay 16": "shelf bay number 16",
+     "bay 17": "shelf bay number 17",
+     "bay 18": null,
+     "bay 19": "shelf bay number 19",
+     "bay 20": "shelf bay number 20",
+     "bay 21": null,
+     "bay 22": "shelf bay number 22",
+     "bay 23": "shelf bay number 23",
+     "bay 24": null,
+     "bay 25": "shelf bay number 25"
+    }
+   }
+  },
+  {
+   "id": "v2_overflow_40_options",
+   "state": {
+    "ticket": 12,
+    "text": "Printer on floor 3 jams."
+   },
+   "question": {
+    "type": "choice",
+    "instructions": "Which queue?",
+    "criteria": {
+     "queue-00": null,
+     "queue-01": null,
+     "queue-02": null,
+     "queue-03": null,
+     "queue-04": null,
+     "queue-05": null,
+     "queue-06": null,
+     "queue-07": null,
+     "queue-08": null,
+     "queue-09": null,
+     "queue-10": null,
+     "queue-11": null,
+     "queue-12": null,
+     "queue-13": null,
+     "queue-14": null,
+     "queue-15": null,
+     "queue-16": null,
+     "queue-17": null,
+     "queue-18": null,
+     "queue-19": null,
+     "queue-20": null,
+     "queue-21": null,
+     "queue-22": null,
+     "queue-23": null,
+     "queue-24": null,
+     "queue-25": null,
+     "queue-26": null,
+     "queue-27": null,
+     "queue-28": null,
+     "queue-29": null,
+     "queue-30": null,
+     "queue-31": null,
+     "queue-32": null,
+     "queue-33": null,
+     "queue-34": null,
+     "queue-35": null,
+     "queue-36": null,
+     "queue-37": null,
+     "queue-38": null,
+     "queue-39": null
+    }
+   }
+  },
+  {
+   "id": "v2_overflow_score_20",
+   "state": "The draft cites nine sources.",
+   "question": {
+    "type": "score",
+    "instructions": "How well sourced is it?",
+    "criteria": [
+     "level 0 of sourcing",
+     "level 1 of sourcing",
+     "level 2 of sourcing",
+     "level 3 of sourcing",
+     "level 4 of sourcing",
+     "level 5 of sourcing",
+     "level 6 of sourcing",
+     "level 7 of sourcing",
+     "level 8 of sourcing",
+     "level 9 of sourcing",
+     "level 10 of sourcing",
+     "level 11 of sourcing",
+     "level 12 of sourcing",
+     "level 13 of sourcing",
+     "level 14 of sourcing",
+     "level 15 of sourcing",
+     "level 16 of sourcing",
+     "level 17 of sourcing",
+     "level 18 of sourcing",
+     "level 19 of sourcing"
+    ]
+   }
+  },
+  {
+   "id": "state_false",
+   "state": false,
+   "question": {
+    "type": "noul",
+    "instructions": "Is the flag set?"
+   }
+  },
+  {
+   "id": "state_zero",
+   "state": 0,
+   "question": {
+    "type": "score",
+    "instructions": "How many items?",
+    "criteria": [
+     "none",
+     "some",
+     "many"
+    ]
+   }
+  },
+  {
+   "id": "state_whitespace",
+   "state": " ",
+   "question": {
+    "type": "noul",
+    "instructions": "Is the state blank?"
+   }
+  },
+  {
+   "id": "choice_falsy_descriptions",
+   "state": "Pick any.",
+   "question": {
+    "type": "choice",
+    "instructions": "Which one?",
+    "criteria": {
+     "a": {},
+     "b": 0,
+     "c": false,
+     "d": "",
+     "e": []
+    }
+   }
+  },
+  {
+   "id": "noul_falsy_criteria",
+   "state": "The meter reads 0.",
+   "question": {
+    "type": "noul",
+    "instructions": "Is the meter at zero?",
+    "criteria": {
+     "true": {},
+     "false": 0
+    }
+   }
+  },
+  {
+   "id": "noul_criteria_non_dict",
+   "state": "x",
+   "question": {
+    "type": "noul",
+    "instructions": "Is it x?",
+    "criteria": [
+     "ignored",
+     "list"
+    ]
+   }
+  }
+ ]
+}
