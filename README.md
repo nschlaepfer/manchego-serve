@@ -16,6 +16,16 @@ file and of the chat template, tokenizer and config files) and the server runs w
 
 Runs on Linux + NVIDIA CUDA (PyTorch, bf16), on CPU (PyTorch, float32), and on Apple silicon (MLX, optional).
 
+**This branch is 0.2.0.dev0, a development version, not a release** ([docs/CHANGES-0.2.0.md](docs/CHANGES-0.2.0.md)).
+It prepares the server for the next model (Manchego v3, trained under the SemIf prompt contract). The contract now
+comes from each model folder's `manchego_config.json`: `auto` for v2.1, unchanged, or `semif` for v3 (see
+[The served policy](#the-served-policy)). A temperature map can now be bound to one model's weights and may sharpen
+(schema 2). Any model without a map bound to its hash gets T = 1.0. An opt-in CUDA fast path (fast linear-attention
+kernels, CUDA graphs, a lean host path) is off by default and not yet run on CUDA ([docs/FAST_PATH.md](docs/FAST_PATH.md)).
+With the default flags, v2.1 gets 0.1.2's prompts and answers. Two edge cases change, both towards the published
+policy: with `--no-hash` and a bare directory, the v2.1 map is no longer applied; and the reference linear-attention
+kernels now run even when flash-linear-attention is installed.
+
 **Tested so far:** the MLX backend on Apple silicon; the PyTorch backend on CPU (macOS, and the CPU image on linux/arm64
 with no network); and the **CUDA image on an NVIDIA A10** (24 GB, driver 570.148, 2026-09-23): built in 76 s including the
 verified weight download, `/healthz` healthy with weights and support files verified and a repeat-identical warm-up, all 40
@@ -85,6 +95,12 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 | `--no-hash`, `--no-warmup` | off | skip hashing the weight files / the warm-up at start-up |
 | `--temperature-map` | `default` | `default`: the fitted v2.1 map shipped with the package, applied only to the v2.1 weights it lists (T = 1.0 for any other model); `off` (or `--no-temperature-map`): temperature 1.0 for every type, the v0.1.0 policy; or a JSON file (schema 1, or schema 2 bound to one model's weights). Or `$MANCHEGO_TEMPERATURE_MAP`. See the JevBench v1.5 warning below |
 
+| `--contract` | `model` | `model`: the `contract` field of the model folder's `manchego_config.json`, `auto` when absent (v2.1); `auto`; or `semif`. Or `$MANCHEGO_CONTRACT` |
+| `--gdn-kernels` | `reference` | torch, CUDA: `fast` runs flash-linear-attention / causal-conv1d kernels in Qwen3.5's linear-attention layers where importable; `reference` runs Transformers' PyTorch functions even when those packages are installed. Or `$MANCHEGO_GDN_KERNELS`. [docs/FAST_PATH.md](docs/FAST_PATH.md) |
+| `--cuda-graphs`, `--graph-buckets` | off, `256,512,1024,2048` | torch, CUDA: one-prompt forwards replayed as CUDA graphs at padded lengths. Or `$MANCHEGO_CUDA_GRAPHS=1`, `$MANCHEGO_GRAPH_BUCKETS` |
+| `--fast-host` | off | torch: one-prompt calls without needless host syncs; bit for bit the reference. Or `$MANCHEGO_FAST_HOST=1` |
+| `--fast-path` | off | all three of the above |
+
 `--backend`, `--model` and `--revision` default to `$MANCHEGO_BACKEND`, `$MANCHEGO_MODEL` and `$MANCHEGO_REVISION` when set
 (the Docker image sets them). Optional bearer-token auth: `MANCHEGO_API_KEYS=key1,key2`; without it every request is accepted.
 
@@ -92,7 +108,8 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 
 | | |
 |---|---|
-| prompt | contract **auto**: questions with at most 26 options use the short prompt Manchego was trained on (question, `State:`, `Options:` with codes A–Z, "Reply with only the letter of the best option."); 27 to 255 options use the state-first prompt of `contract_v2.py` (system message, fenced state, two-letter codes). Chat template with `add_generation_prompt=True`, `enable_thinking=False`. |
+| prompt | contract **auto** (Manchego v2.1; the default whenever the model folder's `manchego_config.json` names no contract): questions with at most 26 options use the short prompt Manchego was trained on (question, `State:`, `Options:` with codes A–Z, "Reply with only the letter of the best option."); 27 to 255 options use the state-first prompt of `contract_v2.py` (system message, fenced state, two-letter codes). Chat template with `add_generation_prompt=True`, `enable_thinking=False`. |
+| prompt (0.2.0) | contract **semif** (`"contract": "semif"` in `manchego_config.json`, for models trained under SemIf such as Manchego v3): a question with 2 to 16 options and a nonempty state uses SemIf's `direct-options-v1` prompt (`contract_semif.py`: a system message and one JSON user message `{evidence, criterion, options}`, letters A–P, noul as true then false); every other question (17 to 255 options, or a state that is `""`, `{}`, `[]` or `null`) uses the state-first prompt of `contract_v2.py`, never the short prompt. This is the rule the research repository's development reads apply; `tests/test_semif.py` checks every prompt and token id against its training code. `contract_by_question` says which prompt each question got (`semif` or `state_first`). |
 | readout | the hidden state at the last prompt position, projected in float32 onto the output-embedding rows of the offered option codes only; softmax at the question type's temperature (default map: choice 1.791, noul 1.73, score 1.0; `--temperature-map off`: 1.0). Probabilities cover exactly the offered options and sum to 1. The chosen option is the largest logit, whatever the temperature. |
 | passes | one prompt per question, one option order (the client's), no ensembling; the only calibration is the per-type temperature |
 | confidence | `(K * max(p) - 1) / (K - 1)`, clamped to [0, 1], K = number of options (TypeSafe's published definition); Noul answers carry none |
@@ -318,7 +335,9 @@ is imported, and never downloads).
   requests. Compare runs only on the same hardware and image, and report the precision.
 - **Kernels.** The image uses Transformers' reference PyTorch kernels for Qwen3.5's linear-attention layers
   (`flash-linear-attention` and `causal-conv1d` are not installed; the log says so at start-up). This is the slower
-  path; installing those packages speeds it up and changes the arithmetic slightly.
+  path. Since 0.2.0 the reference kernels run even when those packages are installed; `--gdn-kernels fast` (or
+  `--fast-path`) opts in to them and changes the arithmetic slightly. `/healthz` reports what runs under
+  `runtime.gdn_kernels`, and every response carries `manchego.fast_path` when a fast-path piece is on.
 - **One model worker.** Requests are served one at a time; up to 32 wait (then 529 with `retry-after`), each for at
   most 600 s. Measured on the author's machines (not a CUDA benchmark): MLX 8-bit on an M3 Max about 70 ms per
   short question; the CPU image at bf16 in a 16-CPU VM about 3 s per short question.
@@ -328,8 +347,9 @@ is imported, and never downloads).
 
 ```bash
 pip install ".[test]"
-pytest                                                   # no weights needed: wire contract, limits, prompt parity, temperature map
-MANCHEGO_TEST_TOKENIZER=/path/to/Manchego pytest         # + token ids and option-code ids
+pytest                                                   # no weights needed: wire contract, limits, prompt parity, temperature map,
+                                                         # the SemIf contract, the fast path (with torch: a tiny random model on CPU)
+MANCHEGO_TEST_TOKENIZER=/path/to/Manchego pytest         # + token ids and option-code ids (both contracts)
 MANCHEGO_TEST_MLX_MODEL=/path/to/Manchego-MLX-8bit pytest -s tests/test_numeric.py     # Apple silicon
 MANCHEGO_TEST_TORCH_MODEL=/path/to/Manchego pytest -s tests/test_numeric.py            # informational
 ```
@@ -354,6 +374,12 @@ research server, which implements the served policy; it is not public):
   - the map loads, is the pinned file, binds to the loaded weights and applies per question type.
 
   `tests/v010_reference.py` is v0.1.0's readout, frozen.
+- `golden_semif.json` (0.2.0) holds, for the 37 invented questions of `semif_requests.json`, the training code's
+  rendering under contract semif: messages, codes, slot order, chat-templated prompt, token ids and option-code ids. 29
+  are SemIf prompts and 8 are the contract v2 overflow. It was recorded by `tests/record_semif_golden.py` from the
+  research repository alone, using a tokenizer and no weights. Three training paths agree on it: the renderer, the lean
+  trainer's encoder, and the development reads' `encode()`. `tests/test_semif.py` checks every prompt byte for byte, and
+  every id when a tokenizer is available.
 
 ## Disclosures (from the model card)
 
