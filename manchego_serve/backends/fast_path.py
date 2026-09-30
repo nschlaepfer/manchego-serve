@@ -84,7 +84,8 @@ class FastPathConfig:
         if not str(device).startswith("cuda"):
             asked = [n for n, on in (("--gdn-kernels fast", self.gdn_kernels == "fast"), ("--cuda-graphs", self.cuda_graphs)) if on]
             if asked:
-                raise FastPathError(f"{' and '.join(asked)} need a CUDA device; this backend runs on {device}")
+                raise FastPathError(f"{' and '.join(asked)} {'need' if len(asked) > 1 else 'needs'} a CUDA device; "
+                                    f"this backend runs on {device}")
 
     def describe(self) -> dict:
         return {"gdn_kernels": self.gdn_kernels, "cuda_graphs": list(self.graph_buckets) if self.cuda_graphs else False,
