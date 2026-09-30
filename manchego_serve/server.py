@@ -205,7 +205,8 @@ def build(backend: str, model: str | None, revision: str | None, execution: str 
         if pin and not ident["support_files_match_pin"]:
             log("warning: the chat template, tokenizer or config files are NOT the published ones of that revision; "
                 "prompts or numbers may differ from the published policy")
-    tmap = TM.bind(tmap, info["weights_sha256"], log=log, declared_repo=info["repo"], declared_revision=info["revision"])
+    tmap = TM.resolve(tmap, info["weights_sha256"], log=log, declared_repo=info["repo"], declared_revision=info["revision"],
+                      contract=policy)
     log(f"temperature map: {tmap.source}, T = {tmap.temperatures} ({tmap.binding or tmap.note})")
     t0 = time.perf_counter()
     b = load_backend(backend, model_dir, dtype=dtype, device=device)
@@ -242,8 +243,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--no-warmup", action="store_true", help="skip the two warm-up requests at start-up")
     ap.add_argument("--temperature-map", default=os.environ.get("MANCHEGO_TEMPERATURE_MAP") or "default",
                     help="one temperature per question type, applied to the option-code logits: 'default' (the map fitted "
-                         "for v2.1, shipped with the package), 'off' (T = 1.0 for every type, the v0.1.0 policy) or a JSON "
-                         "file (default: $MANCHEGO_TEMPERATURE_MAP, else 'default'). It never changes the chosen option")
+                         "for v2.1, shipped with the package; applied only to the v2.1 weights it lists, under contract auto: "
+                         "T = 1.0 for any other model), 'off' (T = 1.0 for every type, the v0.1.0 policy) or a JSON file "
+                         "(schema 2 is bound to one model's weights_sha256 and refused for any other). Default: "
+                         "$MANCHEGO_TEMPERATURE_MAP, else 'default'. It never changes the chosen option")
     ap.add_argument("--no-temperature-map", action="store_true", help="same as --temperature-map off")
     ap.add_argument("--contract", choices=("model",) + POLICIES, default=os.environ.get("MANCHEGO_CONTRACT") or "model",
                     help="prompt policy: 'model' (default: the `contract` field of the model folder's manchego_config.json, "

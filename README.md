@@ -83,7 +83,7 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 | `--host`, `--port` | 127.0.0.1, 8000 | or `$MANCHEGO_HOST`, `$MANCHEGO_PORT` (the Docker image sets 0.0.0.0 and 8000) |
 | `--max-queue`, `--queue-timeout` | 32, 600 s | requests allowed to wait for the model, and for how long (then 529) |
 | `--no-hash`, `--no-warmup` | off | skip hashing the weight files / the warm-up at start-up |
-| `--temperature-map` | `default` | `default`: the fitted v2.1 map shipped with the package; `off` (or `--no-temperature-map`): temperature 1.0 for every type, the v0.1.0 policy; or a JSON file with the same schema. Or `$MANCHEGO_TEMPERATURE_MAP` |
+| `--temperature-map` | `default` | `default`: the fitted v2.1 map shipped with the package, applied only to the v2.1 weights it lists (T = 1.0 for any other model); `off` (or `--no-temperature-map`): temperature 1.0 for every type, the v0.1.0 policy; or a JSON file (schema 1, or schema 2 bound to one model's weights). Or `$MANCHEGO_TEMPERATURE_MAP`. See the JevBench v1.5 warning below |
 
 `--backend`, `--model` and `--revision` default to `$MANCHEGO_BACKEND`, `$MANCHEGO_MODEL` and `$MANCHEGO_REVISION` when set
 (the Docker image sets them). Optional bearer-token auth: `MANCHEGO_API_KEYS=key1,key2`; without it every request is accepted.
@@ -106,6 +106,38 @@ Apple silicon: `pip install ".[mlx]"`, `manchego-serve-download --repo oraculuma
 The probabilities are `softmax(z / T)`, where `z` holds the option-code logits and `T` depends on the question type.
 `manchego_serve/temperature_map_v2.1.json` ships with the package and its SHA-256 is pinned in `temperature.py`. It
 gives **choice 1.791, noul 1.73, score 1.0**.
+
+> **Warning: the v2.1 map's noul temperature and JevBench v1.5.** JevBench v1.5 reads a noul answer as No when
+> P(yes) ≤ 0.20 and as Yes when P(yes) ≥ 0.80, and counts **anything in between as an abstention, scored wrong**. The
+> map's noul T = 1.73 *softens* every noul answer: P(yes) ≥ 0.80 then needs a yes/no logit margin of at least
+> T · ln 4 = 2.40, instead of 1.39 at T = 1 (the same holds for No). Every noul answer whose margin lies between 1.39 and
+> 2.40 is a Yes or a No at T = 1 and an abstention under the map. Under that rule the map can only turn right noul answers
+> into wrong ones, never the reverse (a temperature above 1 moves every P(yes) towards 0.5). For v2.1 on JevBench v1.5,
+> run with `--temperature-map off`. The map never changes a chosen option; score items are read by their expected
+> level, which the map leaves unchanged (score T = 1.0); anything that reads the choice probabilities (a calibration
+> measure) sees them flattened.
+
+**0.2.0: T = 1.0 for every model the map is not bound to by hash.** The packaged map applies only to the v2.1 builds it
+lists (by `weights_sha256`), and only under contract `auto`. Every other model, Manchego v3 included, gets T = 1.0
+unless a schema-2 map bound to its weights is passed. With `--no-hash`, a bare directory with no hub id and no
+`--revision` now gets T = 1.0 as well (0.1.2 kept the map, reported as not checked). No map ships for any model other
+than v2.1.
+
+**Schema 2 (0.2.0), a map bound to one model.** `--temperature-map /path/map.json` with
+
+```json
+{"schema": "manchego-temperature-map/2",
+ "temperatures": {"choice": 0.85, "noul": 0.7, "score": 1.0},
+ "model_sha256": "<weights_sha256 of the weights it was fitted on, as /healthz reports it>",
+ "fitted_on": "which data, which split, which prompt contract",
+ "rule": "the objective and the decision rule that chose these values",
+ "contract": "semif"}
+```
+
+Temperatures may be below 1 (sharpening) or above (flattening), each in [0.05, 20]. `fitted_on` and `rule` are required
+text; `contract` is optional. The server refuses to start when `model_sha256` is not the loaded weights' SHA-256, when
+the weights were not hashed (`--no-hash`), or when `contract` is not the served contract. Such a map is never applied
+"as asked". `/healthz` reports the whole file under `temperature_map_provenance`.
 
 - **What it changes.** `noul`, `probabilities`, `confidence` and a score's expected level all change. The chosen option
   never changes, because it is read from the logits. Accuracy is therefore identical.
